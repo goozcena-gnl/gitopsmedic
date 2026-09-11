@@ -89,15 +89,17 @@ def apply_proposal(proposal_path: Path, approval: str, repo_root: Path | None = 
     telemetry = telemetry or Telemetry()
     data = json.loads(proposal_path.read_text(encoding="utf-8"))
     proposal_id = data["proposal_id"]
-    if approval != proposal_id:
-        telemetry.event("apply.rejected", proposal_id=proposal_id, reason="approval-token-mismatch")
-        raise PermissionError("Exact proposal id is required as the approval token.")
     root = (repo_root or Path.cwd()).resolve()
     target = Path(data["target"])
     if not target.is_absolute():
         target = root / target
+    resolved_target = target.resolve()
+    telemetry.ensure_output_separate_from(resolved_target)
+    if approval != proposal_id:
+        telemetry.event("apply.rejected", proposal_id=proposal_id, reason="approval-token-mismatch")
+        raise PermissionError("Exact proposal id is required as the approval token.")
     _regular_target(target)
-    target = target.resolve()
+    target = resolved_target
     if not target.is_relative_to(root):
         telemetry.event("apply.rejected", proposal_id=proposal_id, reason="target-outside-repo")
         raise PermissionError("Target must remain inside the repository root.")

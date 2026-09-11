@@ -139,6 +139,38 @@ class SecurityTests(unittest.TestCase):
         self.assertIn("scan.completed", events)
         self.assertIn("proposal.created", events)
 
+    def test_rejected_apply_refuses_direct_telemetry_alias(self):
+        proposal, path = self.proposal()
+        before = self.target.read_bytes()
+        with self.assertRaisesRegex(PermissionError, "Telemetry output must not alias"):
+            apply_proposal(path, "wrong-approval", repo_root=self.root, telemetry=Telemetry(self.target))
+        self.assertEqual(self.target.read_bytes(), before)
+
+    def test_rejected_apply_refuses_symlinked_telemetry_alias(self):
+        proposal, path = self.proposal()
+        before = self.target.read_bytes()
+        run_log = self.root / "apply-runs.jsonl"
+        run_log.symlink_to(self.target)
+        with self.assertRaisesRegex(PermissionError, "Telemetry output must not alias"):
+            apply_proposal(path, "wrong-approval", repo_root=self.root, telemetry=Telemetry(run_log))
+        self.assertEqual(self.target.read_bytes(), before)
+
+    def test_successful_apply_refuses_telemetry_target_alias(self):
+        proposal, path = self.proposal()
+        before = self.target.read_bytes()
+        with patch.dict(os.environ, {"GITOPSMEDIC_RUN_LOG": str(self.target)}):
+            with self.assertRaisesRegex(PermissionError, "Telemetry output must not alias"):
+                apply_proposal(path, proposal.proposal_id, repo_root=self.root)
+        self.assertEqual(self.target.read_bytes(), before)
+
+    def test_successful_apply_writes_only_distinct_telemetry(self):
+        proposal, path = self.proposal()
+        run_log = self.root / "apply-distinct-runs.jsonl"
+        apply_proposal(path, proposal.proposal_id, repo_root=self.root, telemetry=Telemetry(run_log))
+        self.assertEqual(json.loads(self.target.read_text()), proposal.candidate)
+        events = [json.loads(line)["event"] for line in run_log.read_text().splitlines()]
+        self.assertEqual(events, ["apply.completed"])
+
     def test_candidate_substitution_rejected(self):
         proposal, path = self.proposal()
         data = json.loads(path.read_text())
