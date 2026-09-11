@@ -46,7 +46,7 @@ def validate_candidate(candidate: dict, policy_dir: Path | None = None) -> tuple
             staged_policy_dir = Path(td) / "reviewed-policies"
             staged_policy_dir.mkdir()
             (staged_policy_dir / "kubernetes.rego").write_bytes(reviewed_policy)
-            gates.append(_run(["conftest", "test", str(candidate_path), "-p", str(staged_policy_dir)], "conftest"))
+            gates.append(_run(["conftest", "test", str(candidate_path), "-p", str(staged_policy_dir)], "conftest", cwd=Path(td)))
         else:
             gates.append(GateResult("conftest", "NOT RUN", "Required: install Conftest and restore the shipped, digest-verified kubernetes.rego policy. Policy changes require review and a matching digest update."))
         if shutil.which("trivy"):

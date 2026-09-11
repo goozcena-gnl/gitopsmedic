@@ -377,7 +377,10 @@ class SecurityTests(unittest.TestCase):
             if name == "conftest":
                 conftest_commands.append(argv)
                 staged_policy_dir = Path(argv[-1])
+                scanner_cwd = kwargs["cwd"]
                 self.assertEqual(argv[-2], "-p")
+                self.assertEqual(staged_policy_dir.parent, scanner_cwd)
+                self.assertNotEqual(scanner_cwd, self.root)
                 self.assertNotEqual(staged_policy_dir, self.root / "policies")
                 self.assertEqual(set(path.name for path in staged_policy_dir.iterdir()), {"kubernetes.rego"})
                 self.assertEqual((staged_policy_dir / "kubernetes.rego").read_bytes(), (self.root / "policies/kubernetes.rego").read_bytes())
@@ -420,6 +423,32 @@ class SecurityTests(unittest.TestCase):
             proposal, _ = self.proposal()
         self.assertTrue(proposal.safe_to_apply)
         self.assertEqual(next(gate.status for gate in proposal.gates if gate.name == "conftest"), "PASS")
+
+    @unittest.skipUnless(shutil.which("conftest"), "Conftest is not installed")
+    def test_real_conftest_ignores_hostile_repository_config(self):
+        candidate = json.loads((ROOT / "examples/insecure/deployment.json").read_text())
+        candidate_path = self.root / "insecure.json"
+        candidate_path.write_text(json.dumps(candidate))
+        (self.root / "conftest.toml").write_text('namespace = ["hostile"]\n')
+        (self.root / "policies/unreviewed.rego").write_text("package main\ndeny contains \"unreviewed policy loaded\" if { true }\n")
+        ambient = subprocess.run(
+            ["conftest", "test", str(candidate_path), "-p", str(self.root / "policies")],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            timeout=45,
+            check=False,
+        )
+        self.assertEqual(ambient.returncode, 0, ambient.stderr)
+
+        def run_real_conftest(argv, name, **kwargs):
+            if name == "trivy":
+                return GateResult(name, "PASS")
+            return _run(argv, name, **kwargs)
+
+        with patch("gitops_medic.validator._run", side_effect=run_real_conftest):
+            gates, _ = validate_candidate(candidate, self.root / "policies")
+        self.assertEqual(next(gate.status for gate in gates if gate.name == "conftest"), "FAIL")
 
     def test_trivy_uses_trusted_empty_ignore_in_validation_directory(self):
         (self.root / ".trivyignore").write_text("KSV014\nKSV118\n")
