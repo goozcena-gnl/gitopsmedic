@@ -179,6 +179,56 @@ class SecurityTests(unittest.TestCase):
         (self.root / "policies/kubernetes.rego").unlink()
         self.assert_refused_unchanged(proposal, path, [self.target])
 
+    def test_vacuous_or_nonregular_policy_refuses_plan_and_apply(self):
+        policy = self.root / "policies/kubernetes.rego"
+        reviewed = policy.read_bytes()
+        proposal, path = self.proposal()
+        for kind, content in (
+            ("missing", None),
+            ("empty", ""),
+            ("whitespace", " \n\t"),
+            ("comment-only", "# Reviewed policy\n# deny contains msg if { false }\n"),
+            ("package-only", "package main\n"),
+            ("no-op", "package main\ndeny contains msg if { false; msg := \"unused\" }\n"),
+            ("directory", None),
+            ("symlink", None),
+            ("fifo", None),
+        ):
+            with self.subTest(kind=kind):
+                policy.unlink()
+                try:
+                    if content is not None:
+                        policy.write_text(content)
+                    elif kind == "directory":
+                        policy.mkdir()
+                    elif kind == "symlink":
+                        policy.symlink_to(ROOT / "policies/kubernetes.rego")
+                    elif kind == "fifo":
+                        os.mkfifo(policy)
+                    with patch("gitops_medic.validator._run", return_value=GateResult("trivy", "PASS")) as scanner:
+                        blocked, _ = self.proposal()
+                        self.assertFalse(blocked.safe_to_apply)
+                        self.assertEqual(next(gate.status for gate in blocked.gates if gate.name == "conftest"), "NOT RUN")
+                        self.assert_refused_unchanged(proposal, path, [self.target])
+                        self.assertTrue(all(call.args[1] == "trivy" for call in scanner.call_args_list))
+                finally:
+                    if kind == "directory":
+                        policy.rmdir()
+                    else:
+                        policy.unlink(missing_ok=True)
+                    policy.write_bytes(reviewed)
+
+    def test_shipped_policy_still_requires_real_conftest_gate(self):
+        with patch("gitops_medic.validator._run", side_effect=lambda argv, name: GateResult(name, "PASS")) as scanner:
+            proposal, _ = self.proposal()
+            self.assertTrue(proposal.safe_to_apply)
+            conftest = next(call for call in scanner.call_args_list if call.args[1] == "conftest")
+            self.assertEqual(conftest.args[0][:2], ["conftest", "test"])
+            self.assertEqual(conftest.args[0][-2:], ["-p", str(self.root / "policies")])
+        with patch("gitops_medic.validator._run", side_effect=lambda argv, name: GateResult(name, "FAIL" if name == "conftest" else "PASS")):
+            blocked, _ = self.proposal()
+            self.assertFalse(blocked.safe_to_apply)
+
     def test_scanner_failure_timeout_and_error_refuse_apply_without_output_leak(self):
         for result in (subprocess.CompletedProcess([], 1, "secret-manifest-content", "untrusted-output"), subprocess.TimeoutExpired("scanner", 45), OSError("sensitive environment")):
             with self.subTest(result=type(result).__name__):
