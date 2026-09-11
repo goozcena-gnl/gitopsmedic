@@ -18,7 +18,7 @@ Weights: career relevance 20, hackathon similarity 15, differentiation 15, learn
 |---|---|---|---|
 | Ollama | Devops-Tools: MLOps/AI; OSS, needs-review; upstream MIT verified | Optional local LLM | ALLOW |
 | Qwen3-4B | Model weights, Apache-2.0 verified | Default local model | ALLOW |
-| Conftest | Devops-Tools: application/cloud security; needs-review; upstream Apache-2.0 verified | Required policy gate; runtime NOT RUN locally | ALLOW WITH REVIEW NOTE |
+| Conftest | Devops-Tools: application/cloud security; needs-review; upstream Apache-2.0 verified | Required policy gate; later real-tool verification PASS | ALLOW WITH REVIEW NOTE |
 | Trivy | Devops-Tools: container/Kubernetes security; upstream Apache-2.0 verified | Required configuration gate + CI | ALLOW |
 | Docker Compose | Devops-Tools: OSS, active | Optional local services | ALLOW |
 | Docker OpenTelemetry LGTM | Devops-Tools: OSS, active | Demo observability backend | ALLOW |
@@ -31,7 +31,7 @@ Weights: career relevance 20, hackathon similarity 15, differentiation 15, learn
 
 The candidate-ranking scores above are historical project-selection judgments, not implementation or security measurements. Numeric self-ratings have been removed.
 
-The P0 pass reproduced and fixed four boundaries: content-bound approval, operator-sourced replacement images, required fail-closed gates with host-privilege checks, and exclusive temporary-file replacement. The verified local result is 29 unit tests, 23 security regressions within that suite, 4 evaluations, Python compilation, real Trivy fixture checks, and a cached Python-container test run. Real Conftest and a real all-gates-PASS demo remain unverified because Conftest is unavailable. See [VALIDATION.md](VALIDATION.md) and [security boundaries](docs/security.md).
+The original P0 implementation pass reproduced and fixed four boundaries: content-bound approval, operator-sourced replacement images, required fail-closed gates with host-privilege checks, and exclusive temporary-file replacement. Its 29-unit/23-security result and blocked Conftest/demo status are historical; later independent verification completed the real Conftest, Trivy, and hardened happy path successfully. See [VALIDATION.md](VALIDATION.md) for current commit-specific results and [security boundaries](docs/security.md).
 
 Deferred portfolio ideas, outside this P0 phase and not a publish recommendation:
 1. branch/PR-based remediation so the final mutation is native GitOps rather than a working-tree replacement;

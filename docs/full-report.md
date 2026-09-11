@@ -97,7 +97,7 @@ GitOpsMedic mirrors the CloudOps workshop's remediation/guardrail/human-validati
 
 ## R — Evidence-based status
 
-Numeric implementation self-ratings have been removed. Four P0 attacks were reproduced before fixes and now pass negative regressions. Local unit tests, evaluations, compilation, Trivy fixture checks, and cached Python-container tests passed. Conftest was unavailable, so the real full-profile happy path remains BLOCKED. This is a bounded hardening result, not production certification; see [security.md](security.md) for unresolved assumptions. The project-selection scores in section F are historical preferences, not measured security evidence.
+Numeric implementation self-ratings have been removed. Four P0 attacks were reproduced before fixes and now pass negative regressions. Local unit tests, evaluations, compilation, Trivy fixture checks, and cached Python-container tests passed. The original implementation run lacked Conftest and was blocked, but later independent real-tool verification passed Conftest, Trivy, and the complete hardened workflow. This is a bounded hardening result, not production certification; see [security.md](security.md) for unresolved assumptions and [VALIDATION.md](../VALIDATION.md) for commit-specific results. The project-selection scores in section F are historical preferences, not measured security evidence.
 
 ## S — Exact next actions
 

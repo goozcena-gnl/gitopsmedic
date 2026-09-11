@@ -10,4 +10,4 @@ Requires Python 3.11+, Conftest, reviewed policies, and Trivy for APPLY. Missing
 6. Optional: `docker compose --profile ai up -d ollama`, `docker compose --profile ai exec ollama ollama pull qwen3:4b`, then `make PYTHON=python3 demo-llm REPLACEMENT_IMAGE=nginx:1.27.5`.
 7. Optional observability: `docker compose --profile observability up -d lgtm`, install the `otel` extra, export `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`, and rerun the demo.
 
-The P0 local demo was BLOCKED because Conftest was absent; Trivy and the built-in gate passed. See [validation](../VALIDATION.md).
+The original P0 implementation run was BLOCKED because Conftest was absent; Trivy and the built-in gate passed. A later independent verification installed the real tools and completed the hardened demo successfully. See [validation](../VALIDATION.md).
