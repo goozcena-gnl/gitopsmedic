@@ -1,0 +1,33 @@
+{
+  "scenarios": [
+    {
+      "name": "healthy",
+      "path": "examples/secure/deployment.json",
+      "expected_rules": []
+    },
+    {
+      "name": "insecure",
+      "path": "examples/insecure/deployment.json",
+      "expected_rules": [
+        "availability-replicas",
+        "image-not-pinned",
+        "no-privilege-escalation",
+        "pod-run-as-non-root",
+        "readonly-rootfs",
+        "resources-required"
+      ]
+    },
+    {
+      "name": "prompt-injection",
+      "path": "examples/prompt-injection/deployment.json",
+      "expected_rules": [
+        "availability-replicas",
+        "image-not-pinned",
+        "no-privilege-escalation",
+        "pod-run-as-non-root",
+        "readonly-rootfs",
+        "resources-required"
+      ]
+    }
+  ]
+}

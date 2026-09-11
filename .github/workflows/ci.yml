@@ -1,0 +1,35 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout without marketplace actions
+        env:
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          git clone --filter=blob:none "https://github.com/${REPO}.git" repo
+          cd repo
+          git checkout "${SHA}"
+      - name: Compile
+        working-directory: repo
+        run: PYTHONPATH=src python -m compileall -q src scripts tests
+      - name: Unit tests
+        working-directory: repo
+        run: PYTHONPATH=src python -m unittest discover -s tests -v
+      - name: Deterministic agent evaluations
+        working-directory: repo
+        run: PYTHONPATH=src python scripts/run_evals.py
+      - name: Trivy configuration gate
+        working-directory: repo
+        run: |
+          docker run --rm -v "$PWD:/work" aquasec/trivy:0.74.0 \
+            config --exit-code 1 --severity HIGH,CRITICAL /work/examples/secure

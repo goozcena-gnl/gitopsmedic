@@ -1,0 +1,19 @@
+services:
+  ollama:
+    image: ollama/ollama:0.33.3
+    profiles: ["ai"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+
+  lgtm:
+    image: grafana/otel-lgtm:0.32.1
+    profiles: ["observability"]
+    ports:
+      - "3000:3000"
+      - "4317:4317"
+      - "4318:4318"
+
+volumes:
+  ollama:

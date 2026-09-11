@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gitops-medic"
+version = "0.1.0"
+description = "Local-first, human-approved CloudOps remediation agent for declarative Kubernetes manifests."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "Benoit Gianelli"}]
+dependencies = []
+
+[project.optional-dependencies]
+otel = [
+  "opentelemetry-api>=1.28,<2",
+  "opentelemetry-sdk>=1.28,<2",
+  "opentelemetry-exporter-otlp-proto-http>=1.28,<2"
+]
+
+[project.scripts]
+gitops-medic = "gitops_medic.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
