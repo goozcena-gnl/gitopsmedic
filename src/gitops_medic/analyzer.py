@@ -24,7 +24,7 @@ def analyze(manifest: dict) -> list[Finding]:
         prefix = f"spec.template.spec.containers[{i}]"
         image = str(container.get("image", ""))
         if image.endswith(":latest") or ":" not in image:
-            findings.append(Finding("image-not-pinned", "HIGH", f"Container image is not pinned to an explicit non-latest version: {image or '<missing>'}.", f"{prefix}.image", "Replace it with the reviewed image stored in metadata annotation gitops-medic.dev/safe-image."))
+            findings.append(Finding("image-not-pinned", "HIGH", f"Container image is not pinned to an explicit non-latest version: {image or '<missing>'}.", f"{prefix}.image", "Supply a reviewed --replacement-image to PLAN; repository annotations are not trusted image inputs."))
         resources = container.get("resources") or {}
         if not resources.get("requests") or not resources.get("limits"):
             findings.append(Finding("resources-required", "MEDIUM", "Container does not define both resource requests and limits.", f"{prefix}.resources", "Add explicit CPU and memory requests/limits."))

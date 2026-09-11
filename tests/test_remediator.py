@@ -7,7 +7,7 @@ from gitops_medic.remediator import remediate
 class RemediatorTests(unittest.TestCase):
     def test_remediation_is_deterministic_and_resolves_demo_findings(self):
         m=json.loads((ROOT/'examples/insecure/deployment.json').read_text())
-        a=remediate(m); b=remediate(m)
+        a=remediate(m,replacement_image='nginx:1.27.5'); b=remediate(m,replacement_image='nginx:1.27.5')
         self.assertEqual(a,b)
         self.assertEqual(analyze(a),[])
         self.assertEqual(m['spec']['replicas'],1)

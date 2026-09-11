@@ -30,12 +30,12 @@ def scan(path: Path, telemetry: Telemetry | None = None) -> list[Finding]:
         telemetry.event("scan.completed", target=str(path), findings=len(findings))
         return findings
 
-def propose(path: Path, use_llm: bool = False, policy_dir: Path | None = None, telemetry: Telemetry | None = None) -> Proposal:
+def propose(path: Path, use_llm: bool = False, policy_dir: Path | None = None, telemetry: Telemetry | None = None, *, replacement_image: str | None = None) -> Proposal:
     telemetry = telemetry or Telemetry()
     with telemetry.span("propose", target=str(path), llm=use_llm):
         manifest, source_sha = load_json(path)
         findings = analyze(manifest)
-        candidate = remediate(manifest)
+        candidate = remediate(manifest, replacement_image=replacement_image)
         gates, safe = validate_candidate(candidate, policy_dir)
         explanation, llm_status = explain_with_ollama(findings, path.name) if use_llm else (deterministic_explanation(findings), "NOT_RUN")
         gates.append(GateResult("ollama-advisory", llm_status, "advisory only; never authoritative for apply"))

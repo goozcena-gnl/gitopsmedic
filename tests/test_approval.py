@@ -12,14 +12,14 @@ class ApprovalTests(unittest.TestCase):
     def tearDown(self):
         os.chdir(self.old); self.td.cleanup()
     def test_wrong_approval_is_rejected(self):
-        p=propose(Path('deployment.json'),policy_dir=Path('policies')); f=save_proposal(p)
+        p=propose(Path('deployment.json'),policy_dir=Path('policies'),replacement_image='nginx:1.27.5'); f=save_proposal(p)
         with self.assertRaises(PermissionError): apply_proposal(f,'wrong',repo_root=self.root)
     def test_exact_approval_applies_and_revalidates(self):
-        p=propose(Path('deployment.json'),policy_dir=Path('policies')); f=save_proposal(p)
+        p=propose(Path('deployment.json'),policy_dir=Path('policies'),replacement_image='nginx:1.27.5'); f=save_proposal(p)
         apply_proposal(f,p.proposal_id,repo_root=self.root)
         self.assertEqual(scan(Path('deployment.json')),[])
     def test_stale_source_is_rejected(self):
-        p=propose(Path('deployment.json'),policy_dir=Path('policies')); f=save_proposal(p)
+        p=propose(Path('deployment.json'),policy_dir=Path('policies'),replacement_image='nginx:1.27.5'); f=save_proposal(p)
         self.target.write_text(self.target.read_text()+"\n")
         with self.assertRaises(RuntimeError): apply_proposal(f,p.proposal_id,repo_root=self.root)
 

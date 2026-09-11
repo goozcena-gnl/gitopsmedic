@@ -17,7 +17,7 @@ def cmd_scan(args):
     return 1 if any(f.severity in {"HIGH", "CRITICAL"} for f in findings) else 0
 
 def cmd_propose(args):
-    p = propose(Path(args.target), use_llm=args.llm, policy_dir=Path("policies"))
+    p = propose(Path(args.target), use_llm=args.llm, policy_dir=Path("policies"), replacement_image=args.replacement_image)
     out = save_proposal(p)
     print(p.explanation)
     print("\n--- DIFF ---\n" + (p.diff or "(no changes)"))
@@ -39,7 +39,7 @@ def cmd_demo(args):
         shutil.copytree(Path("policies"), demo_root / "policies")
         target = demo_root / "deployment.json"
         shutil.copy2(source, target)
-        p = propose(target, use_llm=args.llm, policy_dir=demo_root / "policies")
+        p = propose(target, use_llm=args.llm, policy_dir=demo_root / "policies", replacement_image=args.replacement_image)
         propdir = demo_root / ".gitops-medic/proposals"
         prop = save_proposal(p, propdir)
         print("=== GitOpsMedic demo ===")
@@ -57,8 +57,10 @@ def build_parser():
     sub = p.add_subparsers(dest="command", required=True)
     s = sub.add_parser("scan"); s.add_argument("target"); s.set_defaults(func=cmd_scan)
     pr = sub.add_parser("propose"); pr.add_argument("target"); pr.add_argument("--llm", action="store_true"); pr.set_defaults(func=cmd_propose)
+    pr.add_argument("--replacement-image", help="Operator-reviewed image for one regular container; never sourced from manifest metadata")
     ap = sub.add_parser("apply"); ap.add_argument("proposal"); ap.add_argument("--approve", required=True); ap.set_defaults(func=cmd_apply)
     d = sub.add_parser("demo"); d.add_argument("--llm", action="store_true"); d.set_defaults(func=cmd_demo)
+    d.add_argument("--replacement-image", help="Operator-reviewed image for the temporary demo workload")
     return p
 
 def main():
