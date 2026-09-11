@@ -35,9 +35,11 @@ There is one hardened profile, with no development bypass. PLAN and APPLY requir
 2. Conftest using a nonempty reviewed Rego policy directory. This repository ships policies, so policy validation is always configured; absent/empty policies are not a disable switch. API PLAN can take a policy directory; CLI PLAN uses `./policies`, and APPLY always uses `<repo_root>/policies`.
 3. Trivy configuration analysis at HIGH/CRITICAL severity.
 
+Conftest is a required validation gate, but the currently shipped Rego rules do not duplicate every Kubernetes privilege check implemented by the built-in analyzer and Trivy. A Conftest PASS alone is not sufficient; all three gates must PASS. Broader Rego coverage remains P1 work.
+
 Missing tools or policies produce `NOT RUN` and `safe_to_apply=False`. Scanner errors, timeouts, and nonzero exits produce FAIL. APPLY reports the blocking gate names/statuses and next steps without including raw scanner output. A scanner exit code of zero is trusted under the assumption that the executable, configuration, and policies are operator-reviewed. `trivy config` is not a container-image vulnerability or secret scan.
 
-Ollama is advisory, never a required security gate. Unit tests mock external gate results to test authorization independently of installations; those mocks do not prove real scanner compatibility. Real Conftest execution was NOT RUN locally because its binary is absent.
+Ollama is advisory, never a required security gate. Unit tests mock external gate results to test authorization independently of installations; those mocks do not prove real scanner compatibility. Real Conftest execution was NOT RUN during the original implementation validation because its binary was absent. Later independent verification recorded real Conftest and complete hardened workflow PASS results; see [VALIDATION.md](../VALIDATION.md) for the separate verification record. Ollama inference remains NOT RUN.
 
 ## Filesystem boundary
 
@@ -51,6 +53,6 @@ SCAN/PLAN leave the source manifest unchanged, but are not globally read-only: t
 
 Candidate generation precedes advisory inference. Model text is stored/displayed, never parsed into candidate fields, targets, digests, approval values, or subprocess argv. A mocked malicious explanation leaves candidate, target, and digest unchanged in regression tests. The metadata-injection evaluation proves deterministic diagnosis only, not model-level prompt-injection resistance. Findings and file names may contain untrusted strings; a prompt is not a security boundary, and advisory text can mislead a reviewer.
 
-P1: independent real Conftest/full-profile replay; trusted policy/scanner provenance; concurrent filesystem races and auxiliary output-path symlinks; operator review of unbound display fields and image provenance.
+P1: broader Rego coverage; trusted policy/scanner provenance; concurrent filesystem races and auxiliary output-path symlinks; operator review of unbound display fields and image provenance.
 
 P2: complete Kubernetes schema/Pod Security Standards coverage, malformed-input diagnostics, crash recovery, file metadata preservation, and actual model-output quality evaluation. No live cluster, PR automation, MCP, multi-agent behavior, signing, or new runtime dependency was added in P0.

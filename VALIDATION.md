@@ -1,5 +1,7 @@
 # Validation status — 2026-09-11
 
+## Original implementation validation
+
 | Check | Status | Evidence |
 |---|---|---|
 | Baseline default `make test eval compile` | BLOCKED | `python` unavailable; rerun with `PYTHON=python3` |
@@ -41,3 +43,30 @@ Started from clean `main` at `e9751e24e1f0978cbfd346ede5d8bba969e75ec3`; work is
 | I: wrong approval | PASS | REJECTED |
 
 Publish decision: GO WITH CONDITIONS for this bounded P0 change set, not production certification. Independently run real Conftest and the full hardened happy path, and review the trust assumptions in [docs/security.md](docs/security.md). No push or merge was performed.
+
+## Later independent verification
+
+The results below were supplied from a later independent verification. They are distinct from the original implementation validation above, whose statuses and publish decision are preserved as historical context. These checks were not rerun for this documentation update.
+
+| Tool | Version |
+|---|---|
+| Conftest / OPA | 0.69.0 / 1.19.0 |
+| Trivy | 0.62.1 |
+| Docker | 29.1.3 |
+| Ollama | 0.32.14 |
+
+| Check | Result |
+|---|---|
+| Conftest known-good | PASS |
+| Conftest insecure fixture | Expected failure |
+| Trivy known-good | PASS |
+| Trivy privileged | Expected failure |
+| Trivy hostNetwork | Expected failure |
+| Trivy hostPath | Expected failure |
+| Complete hardened workflow | PASS |
+| Final built-in scan | PASS |
+| Final Conftest | PASS |
+| Final Trivy | PASS |
+| Ollama inference | NOT RUN |
+
+Expected failures indicate successful detection of the negative fixtures, not successful validation of those fixtures. Ollama's recorded version does not imply that inference was run.
