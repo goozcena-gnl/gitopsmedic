@@ -28,13 +28,21 @@ class MakefileSecurityTests(unittest.TestCase):
             capture.write_text("import json, sys\nprint(json.dumps(sys.argv[1:]))\n")
             sentinel = root / "sentinel"
             sentinel.write_text("unchanged")
+            unintended = root / "unintended-sentinel"
             targets = {
                 "demo": ["demo"],
                 "demo-llm": ["demo", "--llm"],
                 "propose": ["propose", "examples/insecure/deployment.json"],
             }
             for target, arguments in targets.items():
-                for image in (None, "", "nginx:1.27.5", "registry.invalid/team image:tag;'\"\\ &|<>*?[]$HOME"):
+                for image in (
+                    None,
+                    "",
+                    "nginx:1.27.5",
+                    "registry.invalid/team image:tag;'\"\\ &|<>*?[]$HOME",
+                    "nginx:$(shell touch unintended-sentinel)",
+                    "nginx:${shell touch unintended-sentinel}",
+                ):
                     for source in ("environment", "command-line"):
                         with self.subTest(target=target, image=image, source=source):
                             environment = os.environ.copy()
@@ -45,8 +53,11 @@ class MakefileSecurityTests(unittest.TestCase):
                                 if source == "environment":
                                     environment["REPLACEMENT_IMAGE"] = image
                                 else:
-                                    command.append("REPLACEMENT_IMAGE=" + image.replace("$", "$$"))
+                                    command.append(f"REPLACEMENT_IMAGE={image}")
                             result = subprocess.run(command, cwd=root, env=environment, capture_output=True, text=True, timeout=10)
+                            if unintended.exists():
+                                unintended.unlink()
+                                self.fail("Image data executed a Make function")
                             self.assertEqual(result.returncode, 0, result.stderr)
                             expected = ["-m", "gitops_medic", *arguments]
                             if image:

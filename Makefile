@@ -1,5 +1,6 @@
 PYTHON ?= python
 REPLACEMENT_IMAGE ?=
+override REPLACEMENT_IMAGE := $(value REPLACEMENT_IMAGE)
 export REPLACEMENT_IMAGE
 export PYTHONPATH := src
 
