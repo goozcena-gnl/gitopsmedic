@@ -47,6 +47,9 @@ def cmd_demo(args):
         print("\n" + p.diff)
         print("Gates:", ", ".join(f"{g.name}={g.status}" for g in p.gates))
         print(f"Human approval required: --approve {p.proposal_id}")
+        if not p.safe_to_apply:
+            print("BLOCKED: required gates did not PASS. Supply a reviewed replacement image and restore required scanners/policies before rerunning the demo.")
+            return 2
         apply_proposal(prop, p.proposal_id, repo_root=demo_root)
         remaining = scan(target)
         print(f"Apply complete. Residual built-in findings: {len(remaining)}")
@@ -65,7 +68,15 @@ def build_parser():
 
 def main():
     args = build_parser().parse_args()
-    raise SystemExit(args.func(args))
+    try:
+        result = args.func(args)
+    except (PermissionError, RuntimeError, ValueError) as exc:
+        print(f"BLOCKED: {exc}")
+        result = 2
+    except OSError:
+        print("BLOCKED: filesystem operation failed. Check file types, permissions, and disk state before reviewing a new proposal.")
+        result = 2
+    raise SystemExit(result)
 
 if __name__ == "__main__":
     main()

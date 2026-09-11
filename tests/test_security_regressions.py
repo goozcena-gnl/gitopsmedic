@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 import os
 import shutil
@@ -13,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from gitops_medic.agent import apply_proposal, propose, save_proposal
 from gitops_medic.analyzer import analyze
+from gitops_medic.cli import main
 from gitops_medic.models import GateResult
 from gitops_medic.telemetry import Telemetry
 from gitops_medic.validator import _run
@@ -314,3 +316,16 @@ class SecurityTests(unittest.TestCase):
         data["proposal_id"] = proposal_digest(data["source_sha256"], Path(data["target"]), data["candidate"])
         path.write_text(json.dumps(data))
         self.assert_refused_unchanged(proposal, path, [self.target])
+
+    def test_cli_missing_gate_reports_actionable_refusal(self):
+        proposal, path = self.proposal()
+        before = self.target.read_bytes()
+        output = io.StringIO()
+        with patch("sys.argv", ["gitops-medic", "apply", str(path), "--approve", proposal.proposal_id]), patch("pathlib.Path.cwd", return_value=self.root), patch("gitops_medic.validator.shutil.which", return_value=None), patch("sys.stdout", output):
+            with self.assertRaises(SystemExit) as result:
+                main()
+        self.assertEqual(result.exception.code, 2)
+        self.assertIn("conftest=NOT RUN", output.getvalue())
+        self.assertIn("trivy=NOT RUN", output.getvalue())
+        self.assertNotIn("Traceback", output.getvalue())
+        self.assertEqual(self.target.read_bytes(), before)
