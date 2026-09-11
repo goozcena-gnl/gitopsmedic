@@ -17,7 +17,7 @@ from gitops_medic.analyzer import analyze
 from gitops_medic.cli import main
 from gitops_medic.models import GateResult
 from gitops_medic.telemetry import Telemetry
-from gitops_medic.validator import _run
+from gitops_medic.validator import _run, validate_candidate
 
 
 class MakefileSecurityTests(unittest.TestCase):
@@ -79,7 +79,7 @@ class SecurityTests(unittest.TestCase):
         self.telemetry = Telemetry(self.root / "runs.jsonl")
         self.addCleanup(patch.stopall)
         patch("gitops_medic.validator.shutil.which", side_effect=lambda name: name).start()
-        patch("gitops_medic.validator._run", side_effect=lambda argv, name: GateResult(name, "PASS")).start()
+        patch("gitops_medic.validator._run", side_effect=lambda argv, name, **kwargs: GateResult(name, "PASS")).start()
 
     def proposal(self, **kwargs):
         proposal = propose(self.target, policy_dir=self.root / "policies", telemetry=self.telemetry, **kwargs)
@@ -373,7 +373,7 @@ class SecurityTests(unittest.TestCase):
     def test_shipped_policy_still_requires_real_conftest_gate(self):
         conftest_commands = []
 
-        def inspect_scanner(argv, name):
+        def inspect_scanner(argv, name, **kwargs):
             if name == "conftest":
                 conftest_commands.append(argv)
                 staged_policy_dir = Path(argv[-1])
@@ -388,14 +388,14 @@ class SecurityTests(unittest.TestCase):
             self.assertTrue(proposal.safe_to_apply)
             self.assertEqual(len(conftest_commands), 1)
             self.assertEqual(conftest_commands[0][:2], ["conftest", "test"])
-        with patch("gitops_medic.validator._run", side_effect=lambda argv, name: GateResult(name, "FAIL" if name == "conftest" else "PASS")):
+        with patch("gitops_medic.validator._run", side_effect=lambda argv, name, **kwargs: GateResult(name, "FAIL" if name == "conftest" else "PASS")):
             blocked, _ = self.proposal()
             self.assertFalse(blocked.safe_to_apply)
 
     def test_extra_repository_policy_cannot_affect_conftest(self):
         (self.root / "policies/unreviewed.rego").write_text("package main\ndeny contains \"unreviewed policy loaded\" if { true }\n")
 
-        def inspect_scanner(argv, name):
+        def inspect_scanner(argv, name, **kwargs):
             if name == "trivy":
                 return GateResult(name, "PASS")
             staged_policy_dir = Path(argv[argv.index("-p") + 1])
@@ -411,15 +411,58 @@ class SecurityTests(unittest.TestCase):
     def test_real_conftest_ignores_unreviewed_repository_policy(self):
         (self.root / "policies/unreviewed.rego").write_text("package main\ndeny contains \"unreviewed policy loaded\" if { true }\n")
 
-        def run_real_conftest(argv, name):
+        def run_real_conftest(argv, name, **kwargs):
             if name == "trivy":
                 return GateResult(name, "PASS")
-            return _run(argv, name)
+            return _run(argv, name, **kwargs)
 
         with patch("gitops_medic.validator._run", side_effect=run_real_conftest):
             proposal, _ = self.proposal()
         self.assertTrue(proposal.safe_to_apply)
         self.assertEqual(next(gate.status for gate in proposal.gates if gate.name == "conftest"), "PASS")
+
+    def test_trivy_uses_trusted_empty_ignore_in_validation_directory(self):
+        (self.root / ".trivyignore").write_text("KSV014\nKSV118\n")
+
+        def inspect_scanner(argv, name, **kwargs):
+            if name == "trivy":
+                trusted_ignore = Path(argv[argv.index("--ignorefile") + 1])
+                scanner_cwd = kwargs["cwd"]
+                self.assertEqual(trusted_ignore.read_bytes(), b"")
+                self.assertEqual(trusted_ignore.parent, scanner_cwd)
+                self.assertNotEqual(trusted_ignore, self.root / ".trivyignore")
+                self.assertTrue(Path(argv[-1]).is_absolute())
+            return GateResult(name, "PASS")
+
+        with patch("gitops_medic.validator._run", side_effect=inspect_scanner):
+            proposal, _ = self.proposal()
+        self.assertTrue(proposal.safe_to_apply)
+
+    @unittest.skipUnless(shutil.which("trivy"), "Trivy is not installed")
+    def test_real_trivy_rejects_insecure_candidate_despite_repository_ignore(self):
+        candidate = json.loads((ROOT / "examples/insecure/deployment.json").read_text())
+        (self.root / ".trivyignore").write_text("KSV014\nKSV118\n")
+        ambient_candidate = self.root / "insecure.json"
+        ambient_candidate.write_text(json.dumps(candidate))
+        ambient = subprocess.run(
+            ["trivy", "config", "--exit-code", "1", "--severity", "HIGH,CRITICAL", str(ambient_candidate)],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            timeout=45,
+            check=False,
+        )
+        self.assertEqual(ambient.returncode, 0, ambient.stderr)
+
+        def run_real_trivy(argv, name, **kwargs):
+            if name == "conftest":
+                return GateResult(name, "PASS")
+            return _run(argv, name, **kwargs)
+
+        with patch("gitops_medic.validator._run", side_effect=run_real_trivy):
+            gates, safe = validate_candidate(candidate, self.root / "policies")
+        self.assertFalse(safe)
+        self.assertEqual(next(gate.status for gate in gates if gate.name == "trivy"), "FAIL")
 
     def test_scanner_failure_timeout_and_error_refuse_apply_without_output_leak(self):
         for result in (subprocess.CompletedProcess([], 1, "secret-manifest-content", "untrusted-output"), subprocess.TimeoutExpired("scanner", 45), OSError("sensitive environment")):
@@ -562,7 +605,7 @@ class SecurityTests(unittest.TestCase):
     def test_source_change_during_validation_refused(self):
         proposal, path = self.proposal()
         changed = self.target.read_bytes() + b"\n"
-        def change_source(argv, name):
+        def change_source(argv, name, **kwargs):
             self.target.write_bytes(changed)
             return GateResult(name, "PASS")
         with patch("gitops_medic.validator._run", side_effect=change_source):

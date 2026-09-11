@@ -26,9 +26,9 @@ def _reviewed_policy_bytes(policy_dir: Path) -> bytes | None:
         return None
 
 
-def _run(argv: list[str], name: str) -> GateResult:
+def _run(argv: list[str], name: str, cwd: Path | None = None) -> GateResult:
     try:
-        p = subprocess.run(argv, capture_output=True, text=True, timeout=45, check=False)
+        p = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=45, check=False)
     except (OSError, subprocess.SubprocessError):
         return GateResult(name, "FAIL", "Scanner could not complete. Check installation and rerun validation.")
     detail = f"Scanner exit code: {p.returncode}. Run the scanner locally for details."
@@ -50,7 +50,9 @@ def validate_candidate(candidate: dict, policy_dir: Path | None = None) -> tuple
         else:
             gates.append(GateResult("conftest", "NOT RUN", "Required: install Conftest and restore the shipped, digest-verified kubernetes.rego policy. Policy changes require review and a matching digest update."))
         if shutil.which("trivy"):
-            gates.append(_run(["trivy", "config", "--exit-code", "1", "--severity", "HIGH,CRITICAL", str(candidate_path)], "trivy"))
+            trusted_ignore = Path(td) / "trusted.trivyignore"
+            trusted_ignore.write_text("", encoding="utf-8")
+            gates.append(_run(["trivy", "config", "--ignorefile", str(trusted_ignore), "--exit-code", "1", "--severity", "HIGH,CRITICAL", str(candidate_path)], "trivy", cwd=Path(td)))
         else:
             gates.append(GateResult("trivy", "NOT RUN", "Required: install Trivy and rerun validation."))
     return gates, all(g.status == "PASS" for g in gates)

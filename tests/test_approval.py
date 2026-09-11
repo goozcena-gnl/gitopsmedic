@@ -7,7 +7,7 @@ from gitops_medic.models import GateResult
 
 class ApprovalTests(unittest.TestCase):
     def setUp(self):
-        for scanner_patch in (patch('gitops_medic.validator.shutil.which',side_effect=lambda name:name),patch('gitops_medic.validator._run',side_effect=lambda argv,name:GateResult(name,'PASS'))):
+        for scanner_patch in (patch('gitops_medic.validator.shutil.which',side_effect=lambda name:name),patch('gitops_medic.validator._run',side_effect=lambda argv,name,**kwargs:GateResult(name,'PASS'))):
             scanner_patch.start(); self.addCleanup(scanner_patch.stop)
         self.td=tempfile.TemporaryDirectory(); self.root=Path(self.td.name)
         shutil.copytree(ROOT/'policies',self.root/'policies')
