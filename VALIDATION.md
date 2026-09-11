@@ -138,3 +138,20 @@ Executed on 2026-09-11 against tested code commit `93b46be4140705a1dabec3fc1099e
 | Real hardened demo | PASS | `make PYTHON=python3 demo REPLACEMENT_IMAGE=nginx:1.27.5`; APPLY completed with zero residual built-in findings |
 
 The mandatory Conftest gate receives only a temporary copy of digest-verified policy bytes. The mandatory Trivy gate runs from the validation temporary directory with an explicit trusted empty ignore file, so repository policy additions and `.trivyignore` suppressions cannot weaken either gate.
+
+## Final Conftest configuration-isolation verification
+
+Executed on 2026-09-11 against tested code commit `a0e6d2283f45e7c59863b5a936ca336078fb079b`. The subsequent documentation-only commit records these results without changing the verified code or tests.
+
+| Check | Result | Command / evidence |
+|---|---|---|
+| Compile | PASS | `make PYTHON=python3 compile` |
+| Full unit suite | PASS: 52 tests | `make PYTHON=python3 test` |
+| Security regression suite | PASS: 45 tests | `PYTHONPATH=src python3 -m unittest discover -s tests -p test_security_regressions.py -v` |
+| Evaluations | PASS: 4/4 | `make PYTHON=python3 eval` |
+| Diff check | PASS | `git diff --check` |
+| Real Conftest | PASS | Conftest 0.69.0 / OPA 1.19.0; ambient hostile `conftest.toml` caused vacuous success, while isolated validation correctly failed the insecure candidate |
+| Real Trivy | PASS | Trivy 0.62.1; behavior unchanged |
+| Real hardened demo | PASS | `make PYTHON=python3 demo REPLACEMENT_IMAGE=nginx:1.27.5`; APPLY completed with zero residual built-in findings |
+
+Conftest now runs from the validation temporary directory with explicit candidate and staged digest-verified policy paths, preventing repository-local configuration and additional policy content from influencing the mandatory gate.
