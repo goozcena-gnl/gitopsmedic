@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -211,3 +212,105 @@ class SecurityTests(unittest.TestCase):
                     self.assert_refused_unchanged(proposal, path, [self.target])
                     self.assertFalse(proposal.safe_to_apply)
                     self.assertTrue(any(f.rule == rule and f.severity in {"HIGH", "CRITICAL"} for f in analyze(proposal.candidate)))
+
+    def test_predictable_temp_symlink_never_writes_outside(self):
+        outside_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(outside_directory.cleanup)
+        outside = Path(outside_directory.name) / "outside.txt"
+        outside.write_text("outside file must remain unchanged")
+        outside_before = outside.read_bytes()
+        proposal, path = self.proposal()
+        target_before = self.target.read_bytes()
+        predictable = self.target.with_suffix(self.target.suffix + ".gitops-medic.tmp")
+        predictable.symlink_to(outside)
+        try:
+            self.apply(proposal, path)
+        except PermissionError:
+            self.assertEqual(self.target.read_bytes(), target_before)
+        else:
+            self.assertEqual(json.loads(self.target.read_text()), proposal.candidate)
+        self.assertEqual(outside.read_bytes(), outside_before)
+        self.assertFalse(self.target.is_symlink())
+        self.assertTrue(self.target.is_file())
+
+    def test_nonregular_targets_are_rejected(self):
+        for kind in ("symlink", "directory", "fifo"):
+            with self.subTest(kind=kind):
+                proposal, path = self.proposal()
+                original = self.target.read_bytes()
+                self.target.unlink()
+                other = self.root / "other.json"
+                other.write_bytes(original)
+                if kind == "symlink":
+                    self.target.symlink_to(other)
+                elif kind == "directory":
+                    self.target.mkdir()
+                else:
+                    os.mkfifo(self.target)
+                with self.assertRaisesRegex(PermissionError, "regular file"):
+                    self.apply(proposal, path)
+                self.assertEqual(other.read_bytes(), original)
+                if kind == "directory":
+                    self.target.rmdir()
+                else:
+                    self.target.unlink()
+                self.target.write_bytes(original)
+
+    def test_outside_target_refused_even_with_matching_approval(self):
+        outside_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(outside_directory.cleanup)
+        outside = Path(outside_directory.name) / "deployment.json"
+        outside.write_bytes(self.target.read_bytes())
+        before = outside.read_bytes()
+        proposal = propose(outside, policy_dir=self.root / "policies", telemetry=self.telemetry)
+        path = save_proposal(proposal, self.root / "proposals")
+        self.assert_refused_unchanged(proposal, path, [self.target, outside])
+        self.assertEqual(outside.read_bytes(), before)
+
+    def test_atomic_failure_cleans_temp_and_preserves_target(self):
+        for operation in ("os.replace", "os.fsync"):
+            with self.subTest(operation=operation):
+                proposal, path = self.proposal()
+                before = self.target.read_bytes()
+                with patch(f"gitops_medic.agent.{operation}", side_effect=OSError("injected write failure")):
+                    with self.assertRaises(OSError):
+                        self.apply(proposal, path)
+                self.assertEqual(self.target.read_bytes(), before)
+                self.assertEqual(list(self.root.glob(".gitops-medic-*.tmp")), [])
+
+    def test_source_change_during_validation_refused(self):
+        proposal, path = self.proposal()
+        changed = self.target.read_bytes() + b"\n"
+        def change_source(argv, name):
+            self.target.write_bytes(changed)
+            return GateResult(name, "PASS")
+        with patch("gitops_medic.validator._run", side_effect=change_source):
+            with self.assertRaisesRegex(RuntimeError, "changed during validation"):
+                self.apply(proposal, path)
+        self.assertEqual(self.target.read_bytes(), changed)
+        self.assertEqual(list(self.root.glob(".gitops-medic-*.tmp")), [])
+
+    def test_atomic_success_preserves_mode_and_cleans_temp(self):
+        self.target.chmod(0o640)
+        proposal, path = self.proposal()
+        self.apply(proposal, path)
+        self.assertEqual(self.target.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(json.loads(self.target.read_text()), proposal.candidate)
+        self.assertEqual(list(self.root.glob(".gitops-medic-*.tmp")), [])
+
+    def test_canonical_content_ignores_json_key_order(self):
+        proposal, path = self.proposal()
+        data = json.loads(path.read_text())
+        data["candidate"] = dict(reversed(list(data["candidate"].items())))
+        path.write_text(json.dumps(data, separators=(",", ":")))
+        self.apply(proposal, path)
+        self.assertEqual(json.loads(self.target.read_text()), proposal.candidate)
+
+    def test_recomputed_tampered_token_does_not_match_original_approval(self):
+        from gitops_medic.agent import proposal_digest
+        proposal, path = self.proposal()
+        data = json.loads(path.read_text())
+        data["candidate"]["spec"]["replicas"] = 3
+        data["proposal_id"] = proposal_digest(data["source_sha256"], Path(data["target"]), data["candidate"])
+        path.write_text(json.dumps(data))
+        self.assert_refused_unchanged(proposal, path, [self.target])

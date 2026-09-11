@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import stat
+import tempfile
 from pathlib import Path
 
 from .analyzer import analyze
@@ -18,6 +21,34 @@ def proposal_digest(source_sha256: str, target: Path, candidate: dict) -> str:
     material = {"source_sha256": source_sha256, "target": str(target.resolve()), "candidate": candidate}
     return _bytes_hash(json.dumps(material, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8"))
 
+def _regular_target(target: Path) -> os.stat_result:
+    info = target.lstat()
+    if not stat.S_ISREG(info.st_mode):
+        raise PermissionError("Target must be a regular file, not a symlink or special file. Review the target and generate a new proposal.")
+    return info
+
+def _atomic_replace(target: Path, candidate: dict, source_sha256: str) -> None:
+    original = _regular_target(target)
+    directory_fd = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY)
+    temporary = None
+    try:
+        descriptor, name = tempfile.mkstemp(prefix=".gitops-medic-", suffix=".tmp", dir=target.parent)
+        temporary = Path(name)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            os.fchmod(stream.fileno(), stat.S_IMODE(original.st_mode) & 0o777)
+            stream.write(json.dumps(candidate, indent=2, sort_keys=True, ensure_ascii=False, allow_nan=False) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        current = _regular_target(target)
+        if (current.st_dev, current.st_ino) != (original.st_dev, original.st_ino) or _bytes_hash(target.read_bytes()) != source_sha256:
+            raise RuntimeError("Target changed during validation; generate and review a new proposal.")
+        os.replace(temporary, target)
+        os.fsync(directory_fd)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+        os.close(directory_fd)
+
 def load_json(path: Path) -> tuple[dict, str]:
     raw = path.read_bytes()
     return json.loads(raw.decode("utf-8")), _bytes_hash(raw)
@@ -33,6 +64,7 @@ def scan(path: Path, telemetry: Telemetry | None = None) -> list[Finding]:
 def propose(path: Path, use_llm: bool = False, policy_dir: Path | None = None, telemetry: Telemetry | None = None, *, replacement_image: str | None = None) -> Proposal:
     telemetry = telemetry or Telemetry()
     with telemetry.span("propose", target=str(path), llm=use_llm):
+        _regular_target(path)
         manifest, source_sha = load_json(path)
         findings = analyze(manifest)
         candidate = remediate(manifest, replacement_image=replacement_image)
@@ -61,9 +93,9 @@ def apply_proposal(proposal_path: Path, approval: str, repo_root: Path | None = 
     root = (repo_root or Path.cwd()).resolve()
     target = Path(data["target"])
     if not target.is_absolute():
-        target = (root / target).resolve()
-    else:
-        target = target.resolve()
+        target = root / target
+    _regular_target(target)
+    target = target.resolve()
     if not target.is_relative_to(root):
         telemetry.event("apply.rejected", proposal_id=proposal_id, reason="target-outside-repo")
         raise PermissionError("Target must remain inside the repository root.")
@@ -80,8 +112,6 @@ def apply_proposal(proposal_path: Path, approval: str, repo_root: Path | None = 
         telemetry.event("apply.rejected", proposal_id=proposal_id, reason="revalidation-failed")
         blocked = ", ".join(f"{gate.name}={gate.status}" for gate in final_gates if gate.status != "PASS")
         raise PermissionError(f"Required apply-time gates did not PASS: {blocked}. Restore required tools/policies or address findings, then generate and review a new proposal.")
-    tmp = target.with_suffix(target.suffix + ".gitops-medic.tmp")
-    tmp.write_text(json.dumps(candidate, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    tmp.replace(target)
+    _atomic_replace(target, candidate, data["source_sha256"])
     telemetry.event("apply.completed", proposal_id=proposal_id, target=str(target), gates=[g.status for g in final_gates])
     return target
