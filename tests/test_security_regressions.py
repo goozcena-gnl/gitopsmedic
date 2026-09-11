@@ -171,6 +171,71 @@ class SecurityTests(unittest.TestCase):
         events = [json.loads(line)["event"] for line in run_log.read_text().splitlines()]
         self.assertEqual(events, ["apply.completed"])
 
+    def unsaved_proposal(self):
+        return propose(self.target, policy_dir=self.root / "policies", telemetry=self.telemetry)
+
+    def test_save_proposal_refuses_symlink_to_source(self):
+        proposal = self.unsaved_proposal()
+        directory = self.root / "symlink-proposals"
+        directory.mkdir()
+        destination = directory / f"{proposal.proposal_id}.json"
+        destination.symlink_to(self.target)
+        before = self.target.read_bytes()
+        with self.assertRaisesRegex(PermissionError, "Proposal output must not alias"):
+            save_proposal(proposal, directory)
+        self.assertEqual(self.target.read_bytes(), before)
+        self.assertTrue(destination.is_symlink())
+
+    def test_save_proposal_refuses_hardlink_to_source(self):
+        proposal = self.unsaved_proposal()
+        directory = self.root / "hardlink-proposals"
+        directory.mkdir()
+        destination = directory / f"{proposal.proposal_id}.json"
+        os.link(self.target, destination)
+        before = self.target.read_bytes()
+        with self.assertRaisesRegex(PermissionError, "Proposal output must not alias"):
+            save_proposal(proposal, directory)
+        self.assertEqual(self.target.read_bytes(), before)
+        self.assertTrue(destination.samefile(self.target))
+
+    def test_save_proposal_refuses_direct_source_path(self):
+        proposal = self.unsaved_proposal()
+        source = self.root / f"{proposal.proposal_id}.json"
+        source.write_bytes(self.target.read_bytes())
+        proposal.target = str(source)
+        before = source.read_bytes()
+        with self.assertRaisesRegex(PermissionError, "Proposal output must not alias"):
+            save_proposal(proposal, self.root)
+        self.assertEqual(source.read_bytes(), before)
+
+    def test_save_proposal_atomically_writes_deterministic_json(self):
+        proposal = self.unsaved_proposal()
+        directory = self.root / "normal-proposals"
+        path = save_proposal(proposal, directory)
+        self.assertEqual(path, directory / f"{proposal.proposal_id}.json")
+        self.assertEqual(json.loads(path.read_text()), proposal.to_dict())
+        self.assertEqual(list(directory.glob(".gitops-medic-proposal-*.tmp")), [])
+
+    def test_cli_propose_refuses_symlinked_proposal_destination(self):
+        proposal = self.unsaved_proposal()
+        proposal_directory = self.root / ".gitops-medic/proposals"
+        proposal_directory.mkdir(parents=True)
+        destination = proposal_directory / f"{proposal.proposal_id}.json"
+        destination.symlink_to(self.target)
+        before = self.target.read_bytes()
+        output = io.StringIO()
+        original_directory = Path.cwd()
+        try:
+            os.chdir(self.root)
+            with patch("sys.argv", ["gitops-medic", "propose", str(self.target)]), patch("sys.stdout", output):
+                with self.assertRaises(SystemExit) as result:
+                    main()
+        finally:
+            os.chdir(original_directory)
+        self.assertEqual(result.exception.code, 2)
+        self.assertIn("Proposal output must not alias", output.getvalue())
+        self.assertEqual(self.target.read_bytes(), before)
+
     def test_candidate_substitution_rejected(self):
         proposal, path = self.proposal()
         data = json.loads(path.read_text())

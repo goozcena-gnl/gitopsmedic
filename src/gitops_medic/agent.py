@@ -79,10 +79,32 @@ def propose(path: Path, use_llm: bool = False, policy_dir: Path | None = None, t
         telemetry.event("proposal.created", target=str(path), proposal_id=proposal_id, safe_to_apply=safe, findings=len(findings))
         return proposal
 
+def _ensure_proposal_output_separate(path: Path, target: Path) -> None:
+    try:
+        aliases_target = path.resolve() == target.resolve()
+        if not aliases_target and path.exists() and target.exists():
+            aliases_target = path.samefile(target)
+    except (OSError, RuntimeError) as error:
+        raise PermissionError("Unable to verify that proposal output is separate from the source manifest.") from error
+    if aliases_target:
+        raise PermissionError("Proposal output must not alias the source manifest. Choose another proposal directory.")
+
 def save_proposal(proposal: Proposal, directory: Path = Path(".gitops-medic/proposals")) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{proposal.proposal_id}.json"
-    path.write_text(json.dumps(proposal.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _ensure_proposal_output_separate(path, Path(proposal.target))
+    temporary = None
+    try:
+        descriptor, name = tempfile.mkstemp(prefix=".gitops-medic-proposal-", suffix=".tmp", dir=directory)
+        temporary = Path(name)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(proposal.to_dict(), indent=2, sort_keys=True) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     return path
 
 def apply_proposal(proposal_path: Path, approval: str, repo_root: Path | None = None, telemetry: Telemetry | None = None) -> Path:
