@@ -12,7 +12,7 @@ The reusable pattern is not "AWS-specific agent" but `observe -> normalize evide
 
 ## C — Verified Devops-Tools allow-list
 
-MVP/runtime tools: Python; Ollama (optional); Conftest (optional); Trivy (optional); Docker Compose (optional); OpenTelemetry (optional); Docker OpenTelemetry LGTM (optional); GitHub Actions for public-repository CI; NGINX as the demo workload. Portfolio-only candidates: DeepEval and mcp-server-kubernetes. All tool choices were found in Devops-Tools. Qwen3-4B is an optional model artifact rather than a tooling dependency; its weights are Apache-2.0, but it is not claimed as a Devops-Tools catalogue entry.
+MVP/runtime tools: Python; Ollama (optional); Conftest and Trivy (required for the hardened APPLY profile); Docker Compose (optional); OpenTelemetry (optional); Docker OpenTelemetry LGTM (optional); GitHub Actions for public-repository CI; NGINX as the demo workload. Portfolio-only candidates: DeepEval and mcp-server-kubernetes. All tool choices were found in Devops-Tools. Qwen3-4B is an optional model artifact rather than a tooling dependency; its weights are Apache-2.0, but it is not claimed as a Devops-Tools catalogue entry.
 
 ## D — AWS/Kiro/AgentCore → OSS/local mapping
 
@@ -21,10 +21,10 @@ MVP/runtime tools: Python; Ollama (optional); Conftest (optional); Trivy (option
 | Runtime | AgentCore Runtime | Python process / optional Docker |
 | Model | Bedrock-compatible model access | optional Ollama local inference |
 | Gateway / MCP | AgentCore Gateway | deferred to portfolio edition; approved Kubernetes MCP candidate |
-| Memory | AgentCore Memory | immutable proposal data + run log, no conversational memory in MVP |
-| Identity | AgentCore Identity | local process + explicit human authorization; richer identity deferred |
-| Policy | AgentCore Policy | deterministic built-in rules + optional Conftest/Rego |
-| Guardrails | AgentCore policy/authorization | no LLM writes; exact approval token; target boundary; SHA precondition; revalidation |
+| Memory | AgentCore Memory | mutable proposal JSON with content-bound identity + run log, no conversational memory in MVP |
+| Identity | AgentCore Identity | local process + approval argument; token is not authentication; richer identity deferred |
+| Policy | AgentCore Policy | required built-in rules, Conftest/Rego, and Trivy configuration gate |
+| Guardrails | AgentCore policy/authorization | LLM output not authoritative; recomputed digest; regular target within root; SHA precondition; revalidation |
 | Observability | AgentCore Observability | JSONL events + optional OpenTelemetry -> Grafana LGTM |
 | Evaluation | AgentCore Evaluations | deterministic scenario suite; DeepEval later for model-output quality |
 | Spec workflow | Kiro Feature Specs | committed `requirements.md`, `design.md`, `tasks.md` |
@@ -57,7 +57,7 @@ Weights: career 20, hackathon fit 15, differentiation 15, learning 10, GitHub de
 
 ## H — MVP specification
 
-Input: one Kubernetes Deployment JSON file. Output: normalized findings, advisory explanation, deterministic candidate, diff, gate results and an immutable proposal ID. Mutation is a separate command that requires exact human approval and a matching source SHA.
+Input: one Kubernetes Deployment JSON file and optional explicit operator replacement image. Output: normalized findings, advisory explanation, deterministic candidate, diff, gate results, and a canonical source/target/candidate digest. APPLY recomputes that digest, checks the supplied approval and source SHA, and requires all fresh security gates to PASS. Proposal JSON and display fields are not immutable artifacts.
 
 ## I — Portfolio architecture
 
@@ -65,7 +65,7 @@ See `specs/design.md` and `docs/architecture.md`. The main extension is to repla
 
 ## J — Security & human-in-the-loop model
 
-READ and PLAN are automatic. APPLY is privileged and explicit. Raw repository instructions and raw LLM text are never executed. A candidate must pass deterministic rules; optional Conftest/Trivy failures are blocking; stale proposals fail closed.
+SCAN and PLAN preserve the source manifest while writing telemetry and validation/proposal artifacts. Normal APPLY requires an explicit token; the demo automatically approves its temporary copied target. LLM text is never executed or used as remediation authority. All three security gates must PASS; unavailable scanners, source changes, and content/target tampering block APPLY. Exclusive temporary creation addresses the reproduced predictable-symlink attack, not concurrent hostile directory races. See [security.md](security.md).
 
 ## K — Repository structure
 
@@ -77,7 +77,7 @@ Implemented in Python 3.11+ with zero mandatory Python dependencies. The optiona
 
 ## M — Testing & evaluation
 
-Implemented scenarios: healthy configuration, known-insecure configuration, prompt injection embedded in repository metadata, and an unfixable image-version case. Unit tests additionally cover wrong approval, successful approval, and stale-source rejection.
+Implemented evaluations: healthy configuration, known-insecure configuration, metadata injection in deterministic diagnosis, and an unfixable image-version case. The P0 suite adds content/target tampering, trusted-image input, missing/failing gates, host privileges, exclusive temp replacement, and LLM non-authority checks. Executed results and mock-versus-real distinctions are in [VALIDATION.md](../VALIDATION.md).
 
 ## N — Observability
 
@@ -95,16 +95,13 @@ The workflow compiles Python, runs unit tests, runs deterministic agent evaluati
 
 GitOpsMedic mirrors the CloudOps workshop's remediation/guardrail/human-validation pattern but changes the target from AWS RDS to declarative Kubernetes configuration. It does not claim that local components reproduce AgentCore's managed runtime, identity, gateway, memory or policy services.
 
-## R — Portfolio score
+## R — Evidence-based status
 
-Initial score: **88/100**. Strongest signals are safety architecture, reproducibility, CloudOps/GitOps relevance and testing. Current weaknesses are MVP-only JSON input, no PR creation yet, no live Kubernetes/MCP integration, and optional observability/scanner paths not exercised in the build sandbox.
+Numeric implementation self-ratings have been removed. Four P0 attacks were reproduced before fixes and now pass negative regressions. Local unit tests, evaluations, compilation, Trivy fixture checks, and cached Python-container tests passed. Conftest was unavailable, so the real full-profile happy path remains BLOCKED. This is a bounded hardening result, not production certification; see [security.md](security.md) for unresolved assumptions. The project-selection scores in section F are historical preferences, not measured security evidence.
 
 ## S — Exact next actions
 
-1. Create a public `gitops-medic` GitHub repository and push this artifact.
-2. Run `make test`, `make eval`, `make demo` on the development machine.
-3. Install/run Conftest and Trivy and capture a verified gate transcript.
-4. Enable optional Ollama with a reviewed local model and record a 60–90 second demo.
-5. Add branch/PR-based remediation before adding live Kubernetes mutation.
-6. Add OpenTelemetry/Grafana screenshots and a small dashboard.
-7. Only then add a read-only Kubernetes MCP integration and scoped write capability.
+1. Independently review the canonical proposal digest, trusted image input, required gate decision, and atomic replacement helper with their regressions.
+2. Run `make PYTHON=python3 test eval compile` and the security regression suite.
+3. Run real Conftest and the full hardened demo with an explicitly reviewed image; record actual tool versions and results.
+4. Keep PR automation, live Kubernetes/MCP, observability expansion, and richer identity outside P0. This phase performs no push or merge.
