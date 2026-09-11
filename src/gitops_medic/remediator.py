@@ -4,6 +4,8 @@ import copy
 import difflib
 import json
 
+from .images import is_image_pinned
+
 
 def _pretty(obj: dict) -> str:
     return json.dumps(obj, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
@@ -24,7 +26,7 @@ def remediate(manifest: dict, replacement_image: str | None = None) -> dict:
 
     for container in containers:
         image = str(container.get("image", ""))
-        if replacement_image and (image.endswith(":latest") or ":" not in image):
+        if replacement_image and not is_image_pinned(image):
             container["image"] = replacement_image
         resources = container.setdefault("resources", {})
         resources.setdefault("requests", {"cpu": "100m", "memory": "64Mi"})

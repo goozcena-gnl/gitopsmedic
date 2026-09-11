@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .images import is_image_pinned
 from .models import Finding
 
 
@@ -31,7 +32,7 @@ def analyze(manifest: dict) -> list[Finding]:
     for kind, index, container in containers:
         prefix = f"spec.template.spec.{kind}[{index}]"
         image = str(container.get("image", ""))
-        if image.endswith(":latest") or ":" not in image:
+        if not is_image_pinned(image):
             findings.append(Finding("image-not-pinned", "HIGH", f"Container image is not pinned to an explicit non-latest version: {image or '<missing>'}.", f"{prefix}.image", "Supply a reviewed --replacement-image to PLAN; repository annotations are not trusted image inputs."))
         resources = container.get("resources") or {}
         if not resources.get("requests") or not resources.get("limits"):
