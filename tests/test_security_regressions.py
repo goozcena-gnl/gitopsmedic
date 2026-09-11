@@ -20,6 +20,43 @@ from gitops_medic.telemetry import Telemetry
 from gitops_medic.validator import _run
 
 
+class MakefileSecurityTests(unittest.TestCase):
+    def test_replacement_image_is_one_data_argument(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            capture = root / "capture.py"
+            capture.write_text("import json, sys\nprint(json.dumps(sys.argv[1:]))\n")
+            sentinel = root / "sentinel"
+            sentinel.write_text("unchanged")
+            targets = {
+                "demo": ["demo"],
+                "demo-llm": ["demo", "--llm"],
+                "propose": ["propose", "examples/insecure/deployment.json"],
+            }
+            for target, arguments in targets.items():
+                for image in (None, "", "nginx:1.27.5", "registry.invalid/team image:tag;'\"\\ &|<>*?[]$HOME"):
+                    for source in ("environment", "command-line"):
+                        with self.subTest(target=target, image=image, source=source):
+                            environment = os.environ.copy()
+                            for name in ("REPLACEMENT_IMAGE", "MAKEFLAGS", "MFLAGS", "MAKELEVEL"):
+                                environment.pop(name, None)
+                            command = ["make", "--no-print-directory", "-s", "-f", str(ROOT / "Makefile"), "PYTHON=python3 capture.py", target]
+                            if image is not None:
+                                if source == "environment":
+                                    environment["REPLACEMENT_IMAGE"] = image
+                                else:
+                                    command.append("REPLACEMENT_IMAGE=" + image.replace("$", "$$"))
+                            result = subprocess.run(command, cwd=root, env=environment, capture_output=True, text=True, timeout=10)
+                            self.assertEqual(result.returncode, 0, result.stderr)
+                            expected = ["-m", "gitops_medic", *arguments]
+                            if image:
+                                expected.extend(["--replacement-image", image])
+                            self.assertEqual(json.loads(result.stdout), expected)
+                            self.assertEqual(result.stderr, "")
+                            self.assertEqual(sentinel.read_text(), "unchanged")
+                            self.assertEqual(set(root.iterdir()), {capture, sentinel})
+
+
 class SecurityTests(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
