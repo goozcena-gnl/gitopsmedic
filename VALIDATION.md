@@ -70,3 +70,20 @@ The results below were supplied from a later independent verification. They are 
 | Ollama inference | NOT RUN |
 
 Expected failures indicate successful detection of the negative fixtures, not successful validation of those fixtures. Ollama's recorded version does not imply that inference was run.
+
+## Current PR head verification
+
+Executed on 2026-09-11 at clean HEAD `a4a2ee946129ed62541eea84c515c9c074aff626`, after the Make raw-value freeze and regression update. The subsequent documentation-only commit records these results without changing the verified code or tests. The earlier sections retain historical results, not current test counts.
+
+| Check | Result | Command / evidence |
+|---|---|---|
+| Compile | PASS | `make PYTHON=python3 compile` |
+| Full unit suite | PASS: 33 tests | `make PYTHON=python3 test` |
+| Security regression suite | PASS: 26 tests | `PYTHONPATH=src python3 -m unittest discover -s tests -p test_security_regressions.py -v` |
+| Evaluations | PASS: 4/4 | `make PYTHON=python3 eval` |
+| Real hardened demo | PASS | `make PYTHON=python3 demo REPLACEMENT_IMAGE=nginx:1.27.5`; APPLY completed, zero residual built-in findings |
+| Real Conftest | PASS | Conftest 0.69.0 / OPA 1.19.0; required demo gate, rerun at APPLY |
+| Real Trivy | PASS | Trivy 0.62.1; required demo gate, rerun at APPLY |
+| Diff check | PASS | `git diff --check` |
+
+The focused Makefile regression passed all 36 target/input/source combinations with literal dollars, including both GNU Make shell-function forms. Ollama inference was NOT RUN.
