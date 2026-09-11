@@ -1,10 +1,14 @@
 import os, shutil, sys, tempfile, unittest
 from pathlib import Path
+from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]; sys.path.insert(0,str(ROOT/'src'))
 from gitops_medic.agent import apply_proposal, propose, save_proposal, scan
+from gitops_medic.models import GateResult
 
 class ApprovalTests(unittest.TestCase):
     def setUp(self):
+        for scanner_patch in (patch('gitops_medic.validator.shutil.which',side_effect=lambda name:name),patch('gitops_medic.validator._run',side_effect=lambda argv,name:GateResult(name,'PASS'))):
+            scanner_patch.start(); self.addCleanup(scanner_patch.stop)
         self.td=tempfile.TemporaryDirectory(); self.root=Path(self.td.name)
         shutil.copytree(ROOT/'policies',self.root/'policies')
         self.target=self.root/'deployment.json'; shutil.copy2(ROOT/'examples/insecure/deployment.json',self.target)

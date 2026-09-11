@@ -37,7 +37,7 @@ def propose(path: Path, use_llm: bool = False, policy_dir: Path | None = None, t
         findings = analyze(manifest)
         candidate = remediate(manifest, replacement_image=replacement_image)
         gates, safe = validate_candidate(candidate, policy_dir)
-        explanation, llm_status = explain_with_ollama(findings, path.name) if use_llm else (deterministic_explanation(findings), "NOT_RUN")
+        explanation, llm_status = explain_with_ollama(findings, path.name) if use_llm else (deterministic_explanation(findings), "NOT RUN")
         gates.append(GateResult("ollama-advisory", llm_status, "advisory only; never authoritative for apply"))
         diff = unified_diff(manifest, candidate, str(path))
         proposal_id = proposal_digest(source_sha, path, candidate)
@@ -78,7 +78,8 @@ def apply_proposal(proposal_path: Path, approval: str, repo_root: Path | None = 
     final_gates, safe = validate_candidate(candidate, root / "policies")
     if not safe:
         telemetry.event("apply.rejected", proposal_id=proposal_id, reason="revalidation-failed")
-        raise PermissionError("Candidate failed apply-time revalidation.")
+        blocked = ", ".join(f"{gate.name}={gate.status}" for gate in final_gates if gate.status != "PASS")
+        raise PermissionError(f"Required apply-time gates did not PASS: {blocked}. Restore required tools/policies or address findings, then generate and review a new proposal.")
     tmp = target.with_suffix(target.suffix + ".gitops-medic.tmp")
     tmp.write_text(json.dumps(candidate, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     tmp.replace(target)

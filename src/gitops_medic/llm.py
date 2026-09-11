@@ -18,7 +18,7 @@ def deterministic_explanation(findings: list[Finding]) -> str:
 
 def explain_with_ollama(findings: list[Finding], manifest_name: str) -> tuple[str, str]:
     if not findings:
-        return deterministic_explanation(findings), "NOT_RUN"
+        return deterministic_explanation(findings), "NOT RUN"
     model = os.getenv("GITOPSMEDIC_MODEL", "qwen3:4b")
     endpoint = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/chat")
     payload = {
@@ -41,4 +41,4 @@ def explain_with_ollama(findings: list[Finding], manifest_name: str) -> tuple[st
             raise ValueError("empty model response")
         return content, "PASS"
     except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError, OSError):
-        return deterministic_explanation(findings), "NOT_RUN"
+        return deterministic_explanation(findings), "NOT RUN"
