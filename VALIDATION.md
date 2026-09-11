@@ -121,3 +121,20 @@ Executed on 2026-09-11 against tested code commit `adce6cd46ab94f3e9508733fbe539
 | Real hardened demo | PASS | `make PYTHON=python3 demo REPLACEMENT_IMAGE=nginx:1.27.5`; APPLY completed with zero residual built-in findings |
 
 APPLY telemetry now rejects direct and symlink aliases before any rejection or completion event. Proposal publication rejects direct, symlink, and hardlink aliases to the source and uses an exclusive same-directory temporary file plus atomic replacement; the real CLI PLAN/save path is covered.
+
+## Scanner trust-boundary verification
+
+Executed on 2026-09-11 against tested code commit `93b46be4140705a1dabec3fc1099ee6782c9c611`. The subsequent documentation-only commit records these results without changing the verified code or tests.
+
+| Check | Result | Command / evidence |
+|---|---|---|
+| Compile | PASS | `make PYTHON=python3 compile` |
+| Full unit suite | PASS: 51 tests | `make PYTHON=python3 test` |
+| Security regression suite | PASS: 44 tests | `PYTHONPATH=src python3 -m unittest discover -s tests -p test_security_regressions.py -v` |
+| Evaluations | PASS: 4/4 | `make PYTHON=python3 eval` |
+| Diff check | PASS | `git diff --check` |
+| Real Conftest | PASS | Conftest 0.69.0 / OPA 1.19.0; an unreviewed deny-all repository policy was excluded from the staged reviewed policy directory |
+| Real Trivy | PASS | Trivy 0.62.1; an ambient repository ignore suppressed the negative fixture directly, while validation's trusted empty ignore preserved Trivy FAIL |
+| Real hardened demo | PASS | `make PYTHON=python3 demo REPLACEMENT_IMAGE=nginx:1.27.5`; APPLY completed with zero residual built-in findings |
+
+The mandatory Conftest gate receives only a temporary copy of digest-verified policy bytes. The mandatory Trivy gate runs from the validation temporary directory with an explicit trusted empty ignore file, so repository policy additions and `.trivyignore` suppressions cannot weaken either gate.
