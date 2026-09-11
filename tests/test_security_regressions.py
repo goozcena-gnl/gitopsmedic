@@ -371,15 +371,55 @@ class SecurityTests(unittest.TestCase):
                     policy.write_bytes(reviewed)
 
     def test_shipped_policy_still_requires_real_conftest_gate(self):
-        with patch("gitops_medic.validator._run", side_effect=lambda argv, name: GateResult(name, "PASS")) as scanner:
+        conftest_commands = []
+
+        def inspect_scanner(argv, name):
+            if name == "conftest":
+                conftest_commands.append(argv)
+                staged_policy_dir = Path(argv[-1])
+                self.assertEqual(argv[-2], "-p")
+                self.assertNotEqual(staged_policy_dir, self.root / "policies")
+                self.assertEqual(set(path.name for path in staged_policy_dir.iterdir()), {"kubernetes.rego"})
+                self.assertEqual((staged_policy_dir / "kubernetes.rego").read_bytes(), (self.root / "policies/kubernetes.rego").read_bytes())
+            return GateResult(name, "PASS")
+
+        with patch("gitops_medic.validator._run", side_effect=inspect_scanner):
             proposal, _ = self.proposal()
             self.assertTrue(proposal.safe_to_apply)
-            conftest = next(call for call in scanner.call_args_list if call.args[1] == "conftest")
-            self.assertEqual(conftest.args[0][:2], ["conftest", "test"])
-            self.assertEqual(conftest.args[0][-2:], ["-p", str(self.root / "policies")])
+            self.assertEqual(len(conftest_commands), 1)
+            self.assertEqual(conftest_commands[0][:2], ["conftest", "test"])
         with patch("gitops_medic.validator._run", side_effect=lambda argv, name: GateResult(name, "FAIL" if name == "conftest" else "PASS")):
             blocked, _ = self.proposal()
             self.assertFalse(blocked.safe_to_apply)
+
+    def test_extra_repository_policy_cannot_affect_conftest(self):
+        (self.root / "policies/unreviewed.rego").write_text("package main\ndeny contains \"unreviewed policy loaded\" if { true }\n")
+
+        def inspect_scanner(argv, name):
+            if name == "trivy":
+                return GateResult(name, "PASS")
+            staged_policy_dir = Path(argv[argv.index("-p") + 1])
+            self.assertNotEqual(staged_policy_dir, self.root / "policies")
+            self.assertEqual(set(path.name for path in staged_policy_dir.iterdir()), {"kubernetes.rego"})
+            return GateResult(name, "PASS")
+
+        with patch("gitops_medic.validator._run", side_effect=inspect_scanner):
+            proposal, _ = self.proposal()
+        self.assertTrue(proposal.safe_to_apply)
+
+    @unittest.skipUnless(shutil.which("conftest"), "Conftest is not installed")
+    def test_real_conftest_ignores_unreviewed_repository_policy(self):
+        (self.root / "policies/unreviewed.rego").write_text("package main\ndeny contains \"unreviewed policy loaded\" if { true }\n")
+
+        def run_real_conftest(argv, name):
+            if name == "trivy":
+                return GateResult(name, "PASS")
+            return _run(argv, name)
+
+        with patch("gitops_medic.validator._run", side_effect=run_real_conftest):
+            proposal, _ = self.proposal()
+        self.assertTrue(proposal.safe_to_apply)
+        self.assertEqual(next(gate.status for gate in proposal.gates if gate.name == "conftest"), "PASS")
 
     def test_scanner_failure_timeout_and_error_refuse_apply_without_output_leak(self):
         for result in (subprocess.CompletedProcess([], 1, "secret-manifest-content", "untrusted-output"), subprocess.TimeoutExpired("scanner", 45), OSError("sensitive environment")):

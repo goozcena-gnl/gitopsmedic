@@ -15,12 +15,15 @@ from .models import GateResult
 REVIEWED_POLICY_SHA256 = "cf7352b1336c2b64220c2f3250541967cd42bcbf67ed9c900880c5c387745d9e"
 
 
-def _has_reviewed_policy(policy_dir: Path) -> bool:
+def _reviewed_policy_bytes(policy_dir: Path) -> bytes | None:
     policy = policy_dir / "kubernetes.rego"
     try:
-        return stat.S_ISREG(policy.lstat().st_mode) and hashlib.sha256(policy.read_bytes()).hexdigest() == REVIEWED_POLICY_SHA256
+        if not stat.S_ISREG(policy.lstat().st_mode):
+            return None
+        content = policy.read_bytes()
+        return content if hashlib.sha256(content).hexdigest() == REVIEWED_POLICY_SHA256 else None
     except OSError:
-        return False
+        return None
 
 
 def _run(argv: list[str], name: str) -> GateResult:
@@ -38,8 +41,12 @@ def validate_candidate(candidate: dict, policy_dir: Path | None = None) -> tuple
     with tempfile.TemporaryDirectory(prefix="gitops-medic-") as td:
         candidate_path = Path(td) / "candidate.json"
         candidate_path.write_text(json.dumps(candidate, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        if shutil.which("conftest") and _has_reviewed_policy(policy_dir):
-            gates.append(_run(["conftest", "test", str(candidate_path), "-p", str(policy_dir)], "conftest"))
+        reviewed_policy = _reviewed_policy_bytes(policy_dir)
+        if shutil.which("conftest") and reviewed_policy is not None:
+            staged_policy_dir = Path(td) / "reviewed-policies"
+            staged_policy_dir.mkdir()
+            (staged_policy_dir / "kubernetes.rego").write_bytes(reviewed_policy)
+            gates.append(_run(["conftest", "test", str(candidate_path), "-p", str(staged_policy_dir)], "conftest"))
         else:
             gates.append(GateResult("conftest", "NOT RUN", "Required: install Conftest and restore the shipped, digest-verified kubernetes.rego policy. Policy changes require review and a matching digest update."))
         if shutil.which("trivy"):
