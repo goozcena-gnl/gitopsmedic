@@ -1,6 +1,6 @@
 # GitOpsMedic
 
-**A local-first CloudOps remediation agent that diagnoses Kubernetes manifest risk, proposes deterministic GitOps-style fixes, validates them, and refuses to write until a human explicitly approves the exact proposal.**
+**A local-first CloudOps remediation agent that diagnoses Kubernetes manifest risk, proposes deterministic changes, and requires content-bound approval plus fresh validation before APPLY replaces a target manifest.**
 
 Inspired by the CloudOps pattern in the Onepoint × AWS AgentCore hackathon (Bordeaux, 29 September 2026), but deliberately implemented with a zero-cost/open-source local path.
 
@@ -14,68 +14,48 @@ The model is useful, but never authoritative. **Ollama can explain and prioritiz
 
 ## Architecture
 
-```mermaid
-flowchart LR
-  R[Git repository] --> S[Deterministic scanner]
-  S --> F[Normalized findings]
-  F --> L[Ollama / Qwen3 advisory explanation]
-  F --> D[Deterministic remediator]
-  D --> V[Built-in + optional Conftest/Trivy gates]
-  V --> P[Proposal + unified diff]
-  P --> H{Exact human approval?}
-  H -->|no| X[Reject]
-  H -->|yes| C{Source SHA unchanged?}
-  C -->|no| X
-  C -->|yes| V2[Revalidate]
-  V2 --> W[Atomic repository write]
-  S -.-> O[JSONL / OpenTelemetry]
-  V -.-> O
-  W -.-> O
-```
+The deterministic remediator takes the manifest and an optional operator-reviewed replacement image. Built-in checks, Conftest, and Trivy validate the candidate. APPLY recomputes the source/target/candidate digest, checks approval and source freshness, reruns all gates, then uses exclusive temporary-file creation and atomic replacement. Ollama only supplies explanation text. See [architecture](docs/architecture.md).
 
 ## MVP features
 
 - Kubernetes `Deployment` JSON analysis with deterministic policy rules.
 - Detects weak availability, `:latest` images, missing resource bounds, root execution risk, privilege escalation and writable root filesystems.
 - Generates a deterministic candidate and unified diff without touching the source.
-- Uses a reviewed image annotation instead of hallucinating a replacement tag.
-- Optional Conftest/Rego and Trivy validation when installed.
-- Exact proposal-id human approval gate.
+- Uses explicit `--replacement-image` operator input; manifest annotations cannot select a replacement.
+- Requires built-in, Conftest/Rego, and Trivy gates to PASS; unavailable required gates block APPLY.
+- Recomputes full SHA-256 proposal identity at APPLY, binding source hash, absolute target, and candidate.
 - SHA-256 stale-proposal protection and apply-time revalidation.
-- Optional local Ollama explanation with a prompt-injection boundary.
+- Optional local Ollama explanation, excluded from candidate generation and authorization.
 - JSONL run telemetry; optional OTLP traces.
 - Repeatable evaluation scenarios and unit tests.
 - GitHub Actions CI with no marketplace checkout action.
 
 ## Quick start
 
-Requires Python 3.11+. The core MVP has **zero mandatory Python dependencies**.
+Requires Python 3.11+. The core MVP has **zero mandatory Python package dependencies**. The hardened APPLY profile additionally requires Conftest, reviewed Rego policies, and Trivy on PATH. No missing-tool bypass is provided.
 
 ```bash
-git clone <your-future-gitops-medic-url>
+git clone https://github.com/goozcena-gnl/gitopsmedic.git gitops-medic
 cd gitops-medic
-make test
-make eval
-make demo
+make PYTHON=python3 test eval compile
+make PYTHON=python3 demo REPLACEMENT_IMAGE=nginx:1.27.5
 ```
 
-### Inspect without writing
+The image above is an example operator choice, not an attested image recommendation. The demo automatically supplies its token for a temporary copied manifest only; it refuses when required gates do not PASS.
+
+### Inspect without changing the source
 
 ```bash
-make scan
-make propose
+make PYTHON=python3 scan
+make PYTHON=python3 propose REPLACEMENT_IMAGE=nginx:1.27.5
 ```
 
-`propose` prints an exact approval token, for example:
-
-```text
-proposal_id=0123456789abcdef
-```
+`scan` returns nonzero for HIGH/CRITICAL findings. `propose` saves a proposal and prints its 64-character `proposal_id`; it exits 2 if any required gate does not PASS. Both commands can write telemetry, and PLAN also writes temporary validation files and a proposal. They preserve the source manifest, not every filesystem path.
 
 The real apply command is intentionally separate:
 
 ```bash
-PYTHONPATH=src python -m gitops_medic apply .gitops-medic/proposals/0123456789abcdef.json --approve 0123456789abcdef
+PYTHONPATH=src python3 -m gitops_medic apply .gitops-medic/proposals/<proposal_id>.json --approve <proposal_id>
 ```
 
 ## Optional local AI
@@ -88,7 +68,7 @@ docker compose --profile ai exec ollama ollama pull qwen3:4b
 make demo-llm
 ```
 
-If Ollama is missing or unavailable, GitOpsMedic falls back to deterministic explanations and remains fully functional.
+If Ollama is missing or unavailable, GitOpsMedic falls back to deterministic explanations. This does not relax the required security gates. Pass `REPLACEMENT_IMAGE=<reviewed-image>` to `make demo-llm` as with the deterministic demo.
 
 ## Optional observability
 
@@ -103,26 +83,28 @@ Grafana LGTM is intended here for development/demo observability, not as a produ
 
 ## Safety model
 
-**READ** and **PLAN** are automatic. **APPLY** is never automatic.
+Normal `apply` requires an explicit approval argument. The temporary demo simulates approval automatically and is not a human-approval audit.
 
 Apply requires all of the following:
 
 1. candidate passes mandatory deterministic policy validation;
-2. any optional scanner that ran did not fail;
-3. exact proposal id is supplied by the human;
-4. target is inside the repository root;
+2. Conftest with reviewed policies and Trivy both report PASS;
+3. stored proposal id, recomputed digest, and operator-supplied approval match;
+4. target is a regular file inside the resolved repository root;
 5. source SHA-256 is unchanged;
 6. candidate passes apply-time revalidation.
 
 Raw model output is never evaluated as code and never sent to a shell.
 
+The P0 pass added negative regressions for proposal tampering, manifest-controlled images, missing gates, host privileges, and temporary-path symlinks. Detailed evidence, assumptions about operator-controlled paths, and remaining limitations are in [security](docs/security.md) and [validation](VALIDATION.md). Serialized safety, diffs, and explanations are not authorization inputs.
+
 ## Evaluation
 
 ```bash
-make eval
+make PYTHON=python3 eval
 ```
 
-The included tests cover healthy/insecure states, prompt injection in repository metadata, an unfixable image version, wrong approvals, stale proposals and successful human-approved remediation.
+The included tests cover healthy/insecure states, metadata injection in deterministic diagnosis, unfixable images, tampering, missing/failing scanners, dangerous privileges, filesystem attacks, wrong approvals, stale proposals, and successful APPLY with mocked gate outcomes. Mocked scanners do not establish real scanner compatibility; actual local results are in [VALIDATION.md](VALIDATION.md).
 
 ## Devops-Tools constraint
 
@@ -140,7 +122,7 @@ The project was designed against the `goozcena-gnl/Devops-Tools` catalogue snaps
 
 ## Limitations
 
-This is a portfolio/hackathon MVP, not a production admission controller. It currently supports Kubernetes Deployment JSON, uses opinionated demo remediations, and does not claim equivalence with managed AgentCore Runtime, Identity, Memory, Gateway or Policy.
+This is a portfolio/hackathon MVP, not a production admission controller. It supports Kubernetes Deployment JSON and opinionated demo remediations, not full Kubernetes schema or Pod Security Standards validation. Explicit image replacement refuses multiple regular containers or any init/ephemeral containers. Approval is content binding, not authentication or signing. Filesystem checks assume an operator-controlled checkout without concurrent hostile writers. It does not claim equivalence with managed AgentCore services.
 
 ## License
 

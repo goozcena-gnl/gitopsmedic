@@ -23,7 +23,7 @@ def main() -> int:
         print(f"{'PASS' if ok else 'FAIL'} diagnosis/{scenario['name']}: {got}")
     total += 1
     p = propose(ROOT / "examples/unfixable/deployment.json", policy_dir=ROOT / "policies")
-    ok = not p.safe_to_apply
+    ok = not p.safe_to_apply and any(f.rule == "image-not-pinned" for f in analyze(p.candidate)) and p.gates[0].status == "FAIL"
     passed += int(ok)
     print(f"{'PASS' if ok else 'FAIL'} guardrail/unfixable: safe_to_apply={p.safe_to_apply}")
     score = round(100 * passed / total, 1)

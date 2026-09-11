@@ -1,4 +1,7 @@
 PYTHON ?= python
+REPLACEMENT_IMAGE ?=
+override REPLACEMENT_IMAGE := $(value REPLACEMENT_IMAGE)
+export REPLACEMENT_IMAGE
 export PYTHONPATH := src
 
 .PHONY: test eval demo demo-llm scan propose compile observability-up observability-down model-up model-pull clean
@@ -13,16 +16,22 @@ compile:
 	$(PYTHON) -m compileall -q src scripts tests
 
 demo:
-	$(PYTHON) -m gitops_medic demo
+	@set --; \
+	if [ -n "$$REPLACEMENT_IMAGE" ]; then set -- --replacement-image "$$REPLACEMENT_IMAGE"; fi; \
+	$(PYTHON) -m gitops_medic demo "$$@"
 
 demo-llm:
-	$(PYTHON) -m gitops_medic demo --llm
+	@set --; \
+	if [ -n "$$REPLACEMENT_IMAGE" ]; then set -- --replacement-image "$$REPLACEMENT_IMAGE"; fi; \
+	$(PYTHON) -m gitops_medic demo --llm "$$@"
 
 scan:
 	$(PYTHON) -m gitops_medic scan examples/insecure/deployment.json
 
 propose:
-	$(PYTHON) -m gitops_medic propose examples/insecure/deployment.json
+	@set --; \
+	if [ -n "$$REPLACEMENT_IMAGE" ]; then set -- --replacement-image "$$REPLACEMENT_IMAGE"; fi; \
+	$(PYTHON) -m gitops_medic propose examples/insecure/deployment.json "$$@"
 
 observability-up:
 	docker compose --profile observability up -d lgtm

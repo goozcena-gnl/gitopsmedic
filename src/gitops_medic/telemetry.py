@@ -26,6 +26,24 @@ class Telemetry:
             except Exception:
                 self._tracer = None
 
+    def ensure_output_separate_from(self, source: Path) -> None:
+        try:
+            output_path = self.path.resolve()
+            source_path = source.resolve()
+            aliases_source = output_path == source_path
+            if not aliases_source and self.path.exists() and source.exists():
+                aliases_source = self.path.samefile(source)
+        except (OSError, RuntimeError) as error:
+            raise PermissionError(
+                "Unable to verify that the telemetry output is separate from the source manifest. "
+                "Choose another telemetry path or unset GITOPSMEDIC_RUN_LOG."
+            ) from error
+        if aliases_source:
+            raise PermissionError(
+                "Telemetry output must not alias the source manifest. "
+                "Choose another telemetry path or unset GITOPSMEDIC_RUN_LOG."
+            )
+
     def event(self, name: str, **attrs):
         record = {"ts": datetime.now(timezone.utc).isoformat(), "event": name, **attrs}
         with self.path.open("a", encoding="utf-8") as f:

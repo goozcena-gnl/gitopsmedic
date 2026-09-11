@@ -1,16 +1,157 @@
-# Validation status — 2026-09-10
+# Validation status — 2026-09-11
+
+## Original implementation validation
 
 | Check | Status | Evidence |
 |---|---|---|
-| Python compileall | PASS | Executed in build environment |
-| Unit tests | PASS | 6/6 tests passed |
-| Deterministic evaluations | PASS | 4/4 scenarios, 100% |
-| End-to-end demo | PASS | proposal -> exact approval -> revalidation -> apply -> zero residual built-in findings |
-| Editable install | PASS | `pip install --no-build-isolation -e .` + CLI help |
-| Conftest runtime gate | NOT RUN | Conftest binary not installed in build environment |
-| Trivy runtime gate | NOT RUN | Trivy binary not installed in build environment |
-| Ollama advisory inference | NOT RUN | Ollama not installed/running in build environment |
-| Docker/Grafana LGTM | NOT RUN | Docker not available in build environment |
-| GitHub Actions CI | NOT RUN | repository has not yet been published |
+| Baseline default `make test eval compile` | BLOCKED | `python` unavailable; rerun with `PYTHON=python3` |
+| Baseline unit tests / evaluations / compilation | PASS | Before edits: 6/6 tests, 4/4 evaluations, Python 3.12.3 compileall |
+| Hardened Python compileall | PASS | `make PYTHON=python3 compile` |
+| Hardened unit tests | PASS | `make PYTHON=python3 test`: 29 tests; external scanner outcomes explicitly mocked in approval/security tests |
+| Security regressions | PASS | `PYTHONPATH=src python3 -m unittest discover -s tests -p test_security_regressions.py -v`: 23 tests, including parameterized attacks |
+| Deterministic evaluations | PASS | `make PYTHON=python3 eval`: 4/4; unfixable case now requires an actual residual image finding and built-in FAIL |
+| Happy-path APPLY | PASS | Unit/integration tests with explicit operator image and mocked PASS gates |
+| Real hardened demo | BLOCKED | `make PYTHON=python3 demo REPLACEMENT_IMAGE=nginx:1.27.5`: built-in PASS, Trivy PASS, Conftest NOT RUN; exits 2 without APPLY |
+| Conftest runtime gate | NOT RUN | Binary unavailable; no real full-profile success claimed |
+| Trivy secure fixture | PASS | Installed Trivy 0.62.1: `trivy config --exit-code 1 --severity HIGH,CRITICAL examples/secure` found zero HIGH/CRITICAL findings |
+| Trivy insecure-fixture detection | PASS | Real scan reported three HIGH failures (KSV014 and KSV118); this is an expected negative fixture |
+| Python container unit tests | PASS | Cached `python:3.12.13-alpine3.22`, 29 tests; read-only repository mount, network disabled, writable temporary filesystem |
+| Ollama advisory inference | NOT RUN | Ollama 0.32.14 reachable but no installed models; no downloads or inference performed |
+| Docker availability | PASS | Docker daemon 29.1.3 reachable; used for isolated Python tests |
+| Grafana / OTel services | NOT RUN | Unrelated to P0; not started |
+| Editable install | NOT RUN | Not repeated in this pass; no packaging changes |
+| GitHub Actions / pinned CI Trivy container | NOT RUN | No push or remote CI run; local Trivy version differs from CI's 0.74.0 pin |
 
 `NOT RUN` is intentional and is not represented as a successful validation.
+
+## Baseline and reproduction
+
+Started from clean `main` at `e9751e24e1f0978cbfd346ede5d8bba969e75ec3`; work is local on `hardening/p0-security-boundaries`. SEC-001: 3 failing tampering regressions; SEC-002: attacker image selected; SEC-003: 14 failing missing-gate/privilege subcases; SEC-004: outside file overwritten via predictable symlink. Each was run before its implementation fix, then rerun with the full unit/evaluation suites before committing.
+
+## Original attack replay
+
+| Attack | Check result | Observed outcome |
+|---|---|---|
+| A: candidate changed, original token | PASS | REJECTED; target unchanged |
+| B: target/source hash changed, original token | PASS | REJECTED; both targets unchanged |
+| C: attacker safe-image annotation | PASS | Cannot select replacement; unpinned image remains blocked |
+| D: privileged + hostPath, scanners absent | PASS | REJECTED; built-in FAIL |
+| E: required scanner missing | PASS | REJECTED; serialized prior PASS cannot authorize |
+| F: predictable temp symlink | PASS | Outside file unchanged; APPLY uses a new exclusive temporary file |
+| G: approved original candidate | PASS | Applied with mocked PASS gates; real full-profile execution remains BLOCKED |
+| H: stale source | PASS | REJECTED, including source change during validation |
+| I: wrong approval | PASS | REJECTED |
+
+Publish decision: GO WITH CONDITIONS for this bounded P0 change set, not production certification. Independently run real Conftest and the full hardened happy path, and review the trust assumptions in [docs/security.md](docs/security.md). No push or merge was performed.
+
+## Later independent verification
+
+The results below were supplied from a later independent verification. They are distinct from the original implementation validation above, whose statuses and publish decision are preserved as historical context. These checks were not rerun for this documentation update.
+
+| Tool | Version |
+|---|---|
+| Conftest / OPA | 0.69.0 / 1.19.0 |
+| Trivy | 0.62.1 |
+| Docker | 29.1.3 |
+| Ollama | 0.32.14 |
+
+| Check | Result |
+|---|---|
+| Conftest known-good | PASS |
+| Conftest insecure fixture | Expected failure |
+| Trivy known-good | PASS |
+| Trivy privileged | Expected failure |
+| Trivy hostNetwork | Expected failure |
+| Trivy hostPath | Expected failure |
+| Complete hardened workflow | PASS |
+| Final built-in scan | PASS |
+| Final Conftest | PASS |
+| Final Trivy | PASS |
+| Ollama inference | NOT RUN |
+
+Expected failures indicate successful detection of the negative fixtures, not successful validation of those fixtures. Ollama's recorded version does not imply that inference was run.
+
+## Current PR head verification
+
+Executed on 2026-09-11 at clean HEAD `a4a2ee946129ed62541eea84c515c9c074aff626`, after the Make raw-value freeze and regression update. The subsequent documentation-only commit records these results without changing the verified code or tests. The earlier sections retain historical results, not current test counts.
+
+| Check | Result | Command / evidence |
+|---|---|---|
+| Compile | PASS | `make PYTHON=python3 compile` |
+| Full unit suite | PASS: 33 tests | `make PYTHON=python3 test` |
+| Security regression suite | PASS: 26 tests | `PYTHONPATH=src python3 -m unittest discover -s tests -p test_security_regressions.py -v` |
+| Evaluations | PASS: 4/4 | `make PYTHON=python3 eval` |
+| Real hardened demo | PASS | `make PYTHON=python3 demo REPLACEMENT_IMAGE=nginx:1.27.5`; APPLY completed, zero residual built-in findings |
+| Real Conftest | PASS | Conftest 0.69.0 / OPA 1.19.0; required demo gate, rerun at APPLY |
+| Real Trivy | PASS | Trivy 0.62.1; required demo gate, rerun at APPLY |
+| Diff check | PASS | `git diff --check` |
+
+The focused Makefile regression passed all 36 target/input/source combinations with literal dollars, including both GNU Make shell-function forms. Ollama inference was NOT RUN.
+
+## Telemetry-alias final-head verification
+
+Executed on 2026-09-11 against tested code commit `9f7390799e14f5957c0cf38fb65c9d02c668564e`. The subsequent documentation-only commit records these results without changing the verified code or tests.
+
+| Check | Result | Command / evidence |
+|---|---|---|
+| Compile | PASS | `make PYTHON=python3 compile` |
+| Full unit suite | PASS: 38 tests | `make PYTHON=python3 test` |
+| Security regression suite | PASS: 31 tests | `PYTHONPATH=src python3 -m unittest discover -s tests -p test_security_regressions.py -v` |
+| Evaluations | PASS: 4/4 | `make PYTHON=python3 eval` |
+| Diff check | PASS | `git diff --check` |
+| Real Conftest | PASS | Conftest 0.69.0 / OPA 1.19.0; required demo gate and apply-time rerun |
+| Real Trivy | PASS | Trivy 0.62.1; required demo gate and apply-time rerun |
+| Real hardened demo | PASS | `make PYTHON=python3 demo REPLACEMENT_IMAGE=nginx:1.27.5`; APPLY completed with zero residual built-in findings |
+
+The telemetry regressions reject direct and symlink aliases during both SCAN and PLAN, verify source bytes remain unchanged, and retain JSONL output when telemetry and source paths are distinct.
+
+## Final alias-hardening verification
+
+Executed on 2026-09-11 against tested code commit `adce6cd46ab94f3e9508733fbe539c99d10ab54f`. The subsequent documentation-only commit records these results without changing the verified code or tests.
+
+| Check | Result | Command / evidence |
+|---|---|---|
+| Compile | PASS | `make PYTHON=python3 compile` |
+| Full unit suite | PASS: 47 tests | `make PYTHON=python3 test` |
+| Security regression suite | PASS: 40 tests | `PYTHONPATH=src python3 -m unittest discover -s tests -p test_security_regressions.py -v` |
+| Evaluations | PASS: 4/4 | `make PYTHON=python3 eval` |
+| Diff check | PASS | `git diff --check` |
+| Real Conftest | PASS | Conftest 0.69.0 / OPA 1.19.0; required demo gate and apply-time rerun |
+| Real Trivy | PASS | Trivy 0.62.1; required demo gate and apply-time rerun |
+| Real hardened demo | PASS | `make PYTHON=python3 demo REPLACEMENT_IMAGE=nginx:1.27.5`; APPLY completed with zero residual built-in findings |
+
+APPLY telemetry now rejects direct and symlink aliases before any rejection or completion event. Proposal publication rejects direct, symlink, and hardlink aliases to the source and uses an exclusive same-directory temporary file plus atomic replacement; the real CLI PLAN/save path is covered.
+
+## Scanner trust-boundary verification
+
+Executed on 2026-09-11 against tested code commit `93b46be4140705a1dabec3fc1099ee6782c9c611`. The subsequent documentation-only commit records these results without changing the verified code or tests.
+
+| Check | Result | Command / evidence |
+|---|---|---|
+| Compile | PASS | `make PYTHON=python3 compile` |
+| Full unit suite | PASS: 51 tests | `make PYTHON=python3 test` |
+| Security regression suite | PASS: 44 tests | `PYTHONPATH=src python3 -m unittest discover -s tests -p test_security_regressions.py -v` |
+| Evaluations | PASS: 4/4 | `make PYTHON=python3 eval` |
+| Diff check | PASS | `git diff --check` |
+| Real Conftest | PASS | Conftest 0.69.0 / OPA 1.19.0; an unreviewed deny-all repository policy was excluded from the staged reviewed policy directory |
+| Real Trivy | PASS | Trivy 0.62.1; an ambient repository ignore suppressed the negative fixture directly, while validation's trusted empty ignore preserved Trivy FAIL |
+| Real hardened demo | PASS | `make PYTHON=python3 demo REPLACEMENT_IMAGE=nginx:1.27.5`; APPLY completed with zero residual built-in findings |
+
+The mandatory Conftest gate receives only a temporary copy of digest-verified policy bytes. The mandatory Trivy gate runs from the validation temporary directory with an explicit trusted empty ignore file, so repository policy additions and `.trivyignore` suppressions cannot weaken either gate.
+
+## Final Conftest configuration-isolation verification
+
+Executed on 2026-09-11 against tested code commit `a0e6d2283f45e7c59863b5a936ca336078fb079b`. The subsequent documentation-only commit records these results without changing the verified code or tests.
+
+| Check | Result | Command / evidence |
+|---|---|---|
+| Compile | PASS | `make PYTHON=python3 compile` |
+| Full unit suite | PASS: 52 tests | `make PYTHON=python3 test` |
+| Security regression suite | PASS: 45 tests | `PYTHONPATH=src python3 -m unittest discover -s tests -p test_security_regressions.py -v` |
+| Evaluations | PASS: 4/4 | `make PYTHON=python3 eval` |
+| Diff check | PASS | `git diff --check` |
+| Real Conftest | PASS | Conftest 0.69.0 / OPA 1.19.0; ambient hostile `conftest.toml` caused vacuous success, while isolated validation correctly failed the insecure candidate |
+| Real Trivy | PASS | Trivy 0.62.1; behavior unchanged |
+| Real hardened demo | PASS | `make PYTHON=python3 demo REPLACEMENT_IMAGE=nginx:1.27.5`; APPLY completed with zero residual built-in findings |
+
+Conftest now runs from the validation temporary directory with explicit candidate and staged digest-verified policy paths, preventing repository-local configuration and additional policy content from influencing the mandatory gate.

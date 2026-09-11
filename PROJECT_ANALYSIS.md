@@ -18,8 +18,8 @@ Weights: career relevance 20, hackathon similarity 15, differentiation 15, learn
 |---|---|---|---|
 | Ollama | Devops-Tools: MLOps/AI; OSS, needs-review; upstream MIT verified | Optional local LLM | ALLOW |
 | Qwen3-4B | Model weights, Apache-2.0 verified | Default local model | ALLOW |
-| Conftest | Devops-Tools: application/cloud security; needs-review; upstream Apache-2.0 verified | Optional policy gate | ALLOW WITH REVIEW NOTE |
-| Trivy | Devops-Tools: container/Kubernetes security; upstream Apache-2.0 verified | Optional security gate + CI | ALLOW |
+| Conftest | Devops-Tools: application/cloud security; needs-review; upstream Apache-2.0 verified | Required policy gate; later real-tool verification PASS | ALLOW WITH REVIEW NOTE |
+| Trivy | Devops-Tools: container/Kubernetes security; upstream Apache-2.0 verified | Required configuration gate + CI | ALLOW |
 | Docker Compose | Devops-Tools: OSS, active | Optional local services | ALLOW |
 | Docker OpenTelemetry LGTM | Devops-Tools: OSS, active | Demo observability backend | ALLOW |
 | OpenTelemetry | Devops-Tools: observability | Optional tracing | ALLOW |
@@ -27,22 +27,13 @@ Weights: career relevance 20, hackathon similarity 15, differentiation 15, learn
 | mcp-server-kubernetes | Devops-Tools: OSS, active | Portfolio live Kubernetes tools | PORTFOLIO ONLY |
 | GitHub Actions | Devops-Tools: CI/CD | CI on GitHub | FREE-TIER DEPENDENCY |
 
-## Hiring-manager score
+## Evidence-based implementation status
 
-Initial MVP portfolio score: **88/100**.
+The candidate-ranking scores above are historical project-selection judgments, not implementation or security measurements. Numeric self-ratings have been removed.
 
-- Architecture: 9/10
-- Code quality: 8/10
-- Infrastructure/platform relevance: 9/10
-- Automation: 9/10
-- Observability: 7/10
-- Security: 10/10
-- AI relevance: 8/10
-- Documentation: 9/10
-- Reproducibility: 10/10
-- Originality: 9/10
+The original P0 implementation pass reproduced and fixed four boundaries: content-bound approval, operator-sourced replacement images, required fail-closed gates with host-privilege checks, and exclusive temporary-file replacement. Its 29-unit/23-security result and blocked Conftest/demo status are historical; later independent verification completed the real Conftest, Trivy, and hardened happy path successfully. See [VALIDATION.md](VALIDATION.md) for current commit-specific results and [security boundaries](docs/security.md).
 
-Three highest-value next upgrades:
+Deferred portfolio ideas, outside this P0 phase and not a publish recommendation:
 1. branch/PR-based remediation so the final mutation is native GitOps rather than a working-tree replacement;
 2. read-only live Kubernetes/MCP inventory plus a deliberately scoped mutation tool;
 3. full OpenTelemetry metrics/traces dashboard and DeepEval regressions for the Ollama advisory layer.
