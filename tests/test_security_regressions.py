@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from gitops_medic.agent import apply_proposal, propose, save_proposal
+from gitops_medic.agent import apply_proposal, propose, save_proposal, scan
 from gitops_medic.analyzer import analyze
 from gitops_medic.cli import main
 from gitops_medic.models import GateResult
@@ -94,6 +94,50 @@ class SecurityTests(unittest.TestCase):
             self.apply(proposal, path)
         for target, content in before.items():
             self.assertEqual(target.read_bytes(), content)
+
+    def assert_telemetry_alias_refused(self, operation, run_log):
+        before = self.target.read_bytes()
+        with patch.dict(os.environ, {"GITOPSMEDIC_RUN_LOG": str(run_log)}):
+            with self.assertRaisesRegex(PermissionError, "Choose another telemetry path or unset GITOPSMEDIC_RUN_LOG"):
+                operation()
+        self.assertEqual(self.target.read_bytes(), before)
+
+    def test_scan_refuses_direct_telemetry_alias(self):
+        self.assert_telemetry_alias_refused(
+            lambda: scan(self.target),
+            self.target,
+        )
+
+    def test_propose_refuses_direct_telemetry_alias(self):
+        self.assert_telemetry_alias_refused(
+            lambda: propose(self.target, policy_dir=self.root / "policies"),
+            self.target,
+        )
+
+    def test_scan_refuses_symlinked_telemetry_alias(self):
+        run_log = self.root / "scan-runs.jsonl"
+        run_log.symlink_to(self.target)
+        self.assert_telemetry_alias_refused(
+            lambda: scan(self.target),
+            run_log,
+        )
+
+    def test_propose_refuses_symlinked_telemetry_alias(self):
+        run_log = self.root / "propose-runs.jsonl"
+        run_log.symlink_to(self.target)
+        self.assert_telemetry_alias_refused(
+            lambda: propose(self.target, policy_dir=self.root / "policies"),
+            run_log,
+        )
+
+    def test_distinct_telemetry_path_records_scan_and_propose(self):
+        run_log = self.root / "distinct-runs.jsonl"
+        telemetry = Telemetry(run_log)
+        scan(self.target, telemetry=telemetry)
+        propose(self.target, policy_dir=self.root / "policies", telemetry=telemetry)
+        events = [json.loads(line)["event"] for line in run_log.read_text().splitlines()]
+        self.assertIn("scan.completed", events)
+        self.assertIn("proposal.created", events)
 
     def test_candidate_substitution_rejected(self):
         proposal, path = self.proposal()

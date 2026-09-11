@@ -55,6 +55,7 @@ def load_json(path: Path) -> tuple[dict, str]:
 
 def scan(path: Path, telemetry: Telemetry | None = None) -> list[Finding]:
     telemetry = telemetry or Telemetry()
+    telemetry.ensure_output_separate_from(path)
     with telemetry.span("scan", target=str(path)):
         manifest, _ = load_json(path)
         findings = analyze(manifest)
@@ -63,6 +64,7 @@ def scan(path: Path, telemetry: Telemetry | None = None) -> list[Finding]:
 
 def propose(path: Path, use_llm: bool = False, policy_dir: Path | None = None, telemetry: Telemetry | None = None, *, replacement_image: str | None = None) -> Proposal:
     telemetry = telemetry or Telemetry()
+    telemetry.ensure_output_separate_from(path)
     with telemetry.span("propose", target=str(path), llm=use_llm):
         _regular_target(path)
         manifest, source_sha = load_json(path)
