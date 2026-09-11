@@ -6,7 +6,7 @@
 - [x] human approval token
 - [x] source hash precondition
 - [x] built-in validation gate
-- [x] required fail-closed Conftest and Trivy gates (real Conftest execution remains NOT RUN locally)
+- [x] required fail-closed Conftest and Trivy gates (Conftest was NOT RUN in the original implementation validation; later independent verification passed, as recorded in [VALIDATION.md](../VALIDATION.md))
 - [x] optional Ollama advisory explanation
 - [x] JSONL telemetry + optional OTLP tracing
 - [x] evaluation scenarios and unit tests
@@ -19,7 +19,7 @@
 - [x] require all security gates and detect high-impact host privileges
 - [x] replace predictable temp writes with exclusive atomic replacement
 - [x] reconcile guarantees with executed tests and documented limitations
-- [ ] independently run real Conftest and a full hardened happy-path demo
+- [x] independently run real Conftest and a full hardened happy-path demo (completed in the later independent verification; see [VALIDATION.md](../VALIDATION.md))
 
 ## Portfolio edition
 - [ ] YAML support without introducing an unverified dependency
