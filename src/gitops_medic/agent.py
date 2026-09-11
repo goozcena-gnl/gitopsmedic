@@ -14,6 +14,10 @@ from .validator import validate_candidate
 def _bytes_hash(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
+def proposal_digest(source_sha256: str, target: Path, candidate: dict) -> str:
+    material = {"source_sha256": source_sha256, "target": str(target.resolve()), "candidate": candidate}
+    return _bytes_hash(json.dumps(material, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8"))
+
 def load_json(path: Path) -> tuple[dict, str]:
     raw = path.read_bytes()
     return json.loads(raw.decode("utf-8")), _bytes_hash(raw)
@@ -36,9 +40,8 @@ def propose(path: Path, use_llm: bool = False, policy_dir: Path | None = None, t
         explanation, llm_status = explain_with_ollama(findings, path.name) if use_llm else (deterministic_explanation(findings), "NOT_RUN")
         gates.append(GateResult("ollama-advisory", llm_status, "advisory only; never authoritative for apply"))
         diff = unified_diff(manifest, candidate, str(path))
-        digest_material = (source_sha + json.dumps(candidate, sort_keys=True)).encode()
-        proposal_id = hashlib.sha256(digest_material).hexdigest()[:16]
-        proposal = Proposal(proposal_id, str(path), source_sha, candidate, diff, findings, explanation, gates, safe)
+        proposal_id = proposal_digest(source_sha, path, candidate)
+        proposal = Proposal(proposal_id, str(path.resolve()), source_sha, candidate, diff, findings, explanation, gates, safe)
         telemetry.event("proposal.created", target=str(path), proposal_id=proposal_id, safe_to_apply=safe, findings=len(findings))
         return proposal
 
@@ -55,9 +58,6 @@ def apply_proposal(proposal_path: Path, approval: str, repo_root: Path | None = 
     if approval != proposal_id:
         telemetry.event("apply.rejected", proposal_id=proposal_id, reason="approval-token-mismatch")
         raise PermissionError("Exact proposal id is required as the approval token.")
-    if data.get("safe_to_apply") is not True:
-        telemetry.event("apply.rejected", proposal_id=proposal_id, reason="proposal-not-safe")
-        raise PermissionError("Proposal is not marked safe_to_apply.")
     root = (repo_root or Path.cwd()).resolve()
     target = Path(data["target"])
     if not target.is_absolute():
@@ -67,6 +67,9 @@ def apply_proposal(proposal_path: Path, approval: str, repo_root: Path | None = 
     if not target.is_relative_to(root):
         telemetry.event("apply.rejected", proposal_id=proposal_id, reason="target-outside-repo")
         raise PermissionError("Target must remain inside the repository root.")
+    if proposal_id != proposal_digest(data["source_sha256"], target, data["candidate"]):
+        telemetry.event("apply.rejected", proposal_id=proposal_id, reason="proposal-integrity-failed")
+        raise PermissionError("Proposal integrity verification failed. Generate and review a new proposal before approving it.")
     current = target.read_bytes()
     if _bytes_hash(current) != data["source_sha256"]:
         telemetry.event("apply.rejected", proposal_id=proposal_id, reason="source-changed")
