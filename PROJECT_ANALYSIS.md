@@ -16,16 +16,16 @@ Weights: career relevance 20, hackathon similarity 15, differentiation 15, learn
 
 | Component | Catalogue status/evidence used | MVP role | Decision |
 |---|---|---|---|
-| Ollama | Devops-Tools: MLOps/AI; OSS, needs-review; upstream MIT verified | Optional local LLM | ALLOW |
+| Ollama | DevOps Tools Catalog: MLOps/AI; OSS, needs-review; upstream MIT verified | Optional local LLM | ALLOW |
 | Qwen3-4B | Model weights, Apache-2.0 verified | Default local model | ALLOW |
-| Conftest | Devops-Tools: application/cloud security; needs-review; upstream Apache-2.0 verified | Required policy gate; later real-tool verification PASS | ALLOW WITH REVIEW NOTE |
-| Trivy | Devops-Tools: container/Kubernetes security; upstream Apache-2.0 verified | Required configuration gate + CI | ALLOW |
-| Docker Compose | Devops-Tools: OSS, active | Optional local services | ALLOW |
-| Docker OpenTelemetry LGTM | Devops-Tools: OSS, active | Demo observability backend | ALLOW |
-| OpenTelemetry | Devops-Tools: observability | Optional tracing | ALLOW |
-| DeepEval | Devops-Tools: open-core, active | Portfolio model evaluation | PORTFOLIO ONLY |
-| mcp-server-kubernetes | Devops-Tools: OSS, active | Portfolio live Kubernetes tools | PORTFOLIO ONLY |
-| GitHub Actions | Devops-Tools: CI/CD | CI on GitHub | FREE-TIER DEPENDENCY |
+| Conftest | DevOps Tools Catalog: application/cloud security; needs-review; upstream Apache-2.0 verified | Required policy gate; later real-tool verification PASS | ALLOW WITH REVIEW NOTE |
+| Trivy | DevOps Tools Catalog: container/Kubernetes security; upstream Apache-2.0 verified | Required configuration gate + CI | ALLOW |
+| Docker Compose | DevOps Tools Catalog: OSS, active | Optional local services | ALLOW |
+| Docker OpenTelemetry LGTM | DevOps Tools Catalog: OSS, active | Demo observability backend | ALLOW |
+| OpenTelemetry | DevOps Tools Catalog: observability | Optional tracing | ALLOW |
+| DeepEval | DevOps Tools Catalog: open-core, active | Portfolio model evaluation | PORTFOLIO ONLY |
+| mcp-server-kubernetes | DevOps Tools Catalog: OSS, active | Portfolio live Kubernetes tools | PORTFOLIO ONLY |
+| GitHub Actions | DevOps Tools Catalog: CI/CD | CI on GitHub | FREE-TIER DEPENDENCY |
 
 ## Evidence-based implementation status
 

@@ -19,8 +19,8 @@ Feature Specs use Requirements -> Design -> Tasks and support requirements-first
 
 The repository keeps equivalent artifacts under `specs/` but does not require Kiro.
 
-## Devops-Tools allow-list snapshot
-Evidence was checked against `goozcena-gnl/Devops-Tools` main commit `62a6cd841f0db0eea9b5ef93ef6b878f50fa9db8` (2026-09-10). Relevant catalogue entries include Ollama, DeepEval, Conftest, Trivy, Docker Compose, Docker OpenTelemetry LGTM, GitHub Actions, mcp-server-kubernetes, and OpenTelemetry.
+## DevOps Tools Catalog allow-list snapshot
+Evidence was checked against `goozcena-gnl/devops-tools-catalog` main commit `62a6cd841f0db0eea9b5ef93ef6b878f50fa9db8` (2026-09-10). Relevant catalogue entries include Ollama, DeepEval, Conftest, Trivy, Docker Compose, Docker OpenTelemetry LGTM, GitHub Actions, mcp-server-kubernetes, and OpenTelemetry.
 
 ## Conftest compatibility note
 Conftest v0.68.x uses Rego v1 by default. The included policy therefore uses current `deny contains msg if { ... }` syntax, matching the official Conftest example checked on 2026-09-10.

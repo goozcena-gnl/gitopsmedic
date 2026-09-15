@@ -106,9 +106,9 @@ make PYTHON=python3 eval
 
 The included tests cover healthy/insecure states, metadata injection in deterministic diagnosis, unfixable images, tampering, missing/failing scanners, dangerous privileges, filesystem attacks, wrong approvals, stale proposals, and successful APPLY with mocked gate outcomes. Mocked scanners do not establish real scanner compatibility; actual local results are in [VALIDATION.md](VALIDATION.md).
 
-## Devops-Tools constraint
+## DevOps Tools Catalog constraint
 
-The project was designed against the `goozcena-gnl/Devops-Tools` catalogue snapshot on 2026-09-10. External components used or proposed are drawn from that allow-list. Core implementation uses Python standard library code rather than adding an unnecessary agent framework. See `docs/research.md`.
+The project was designed against the `goozcena-gnl/devops-tools-catalog` snapshot on 2026-09-10. External components used or proposed are drawn from that allow-list. Core implementation uses Python standard library code rather than adding an unnecessary agent framework. See `docs/research.md`.
 
 ## Portfolio roadmap
 
