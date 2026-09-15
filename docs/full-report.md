@@ -1,6 +1,6 @@
 # GitOpsMedic — applied research report
 
-Research snapshot: 2026-09-10. Devops-Tools snapshot: `62a6cd841f0db0eea9b5ef93ef6b878f50fa9db8`.
+Research snapshot: 2026-09-10. DevOps Tools Catalog snapshot: `62a6cd841f0db0eea9b5ef93ef6b878f50fa9db8`.
 
 ## A — Hackathon analysis
 
@@ -10,9 +10,9 @@ The Onepoint × AWS event is scheduled for 29 September 2026 at Cité Numérique
 
 The reusable pattern is not "AWS-specific agent" but `observe -> normalize evidence -> reason -> propose -> authorize -> execute -> observe/evaluate`. The key design decision for a portfolio project is to keep the generative model outside the authorization boundary.
 
-## C — Verified Devops-Tools allow-list
+## C — Verified DevOps Tools Catalog allow-list
 
-MVP/runtime tools: Python; Ollama (optional); Conftest and Trivy (required for the hardened APPLY profile); Docker Compose (optional); OpenTelemetry (optional); Docker OpenTelemetry LGTM (optional); GitHub Actions for public-repository CI; NGINX as the demo workload. Portfolio-only candidates: DeepEval and mcp-server-kubernetes. All tool choices were found in Devops-Tools. Qwen3-4B is an optional model artifact rather than a tooling dependency; its weights are Apache-2.0, but it is not claimed as a Devops-Tools catalogue entry.
+MVP/runtime tools: Python; Ollama (optional); Conftest and Trivy (required for the hardened APPLY profile); Docker Compose (optional); OpenTelemetry (optional); Docker OpenTelemetry LGTM (optional); GitHub Actions for public-repository CI; NGINX as the demo workload. Portfolio-only candidates: DeepEval and mcp-server-kubernetes. All tool choices were found in DevOps Tools Catalog. Qwen3-4B is an optional model artifact rather than a tooling dependency; its weights are Apache-2.0, but it is not claimed as a DevOps Tools Catalog entry.
 
 ## D — AWS/Kiro/AgentCore → OSS/local mapping
 
