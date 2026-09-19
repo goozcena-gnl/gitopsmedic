@@ -59,6 +59,7 @@ jobs:
           code=0
           plumber analyze \
             --config .plumber.yaml \
+            --min-points 100 \
             --output plumber-report.json \
             --sarif plumber.sarif \
             --pbom plumber-pbom.json \
@@ -89,8 +90,8 @@ jobs:
           case "${code}" in
             0) exit 0 ;;
             1)
-              echo "::warning::Plumber findings detected; observation mode keeps this PR non-blocking."
-              exit 0
+              echo "::error::Plumber score is below the enforced 100-point baseline."
+              exit 1
               ;;
             2)
               echo "::error::Plumber configuration or runtime failure."
