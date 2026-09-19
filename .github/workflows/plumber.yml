@@ -1,0 +1,129 @@
+name: Plumber CI/CD Security
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: plumber-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plumber:
+    name: Plumber audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout without marketplace actions
+        env:
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          git clone --filter=blob:none "https://github.com/${REPO}.git" repo
+          cd repo
+          git checkout "${SHA}"
+
+      - name: Install and verify Plumber v0.5.2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLUMBER_VERSION: v0.5.2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          base="https://github.com/getplumber/plumber/releases/download/${PLUMBER_VERSION}"
+
+          curl -fsSL -o "${tmp}/plumber" "${base}/plumber-linux-amd64"
+          curl -fsSL -o "${tmp}/checksums.txt" "${base}/checksums.txt"
+
+          line="$(grep '  plumber-linux-amd64$' "${tmp}/checksums.txt")"
+          (cd "${tmp}" && printf '%s\n' "${line}" | sed 's/plumber-linux-amd64$/plumber/' | sha256sum -c -)
+
+          gh attestation verify "${tmp}/plumber" --repo getplumber/plumber
+
+          chmod +x "${tmp}/plumber"
+          echo "${tmp}" >> "${GITHUB_PATH}"
+
+      - name: Analyze GitHub Actions security
+        working-directory: repo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          code=0
+          plumber analyze \
+            --config .plumber.yaml \
+            --min-points 100 \
+            --fail-warnings \
+            --output plumber-report.json \
+            --sarif plumber.sarif \
+            --pbom plumber-pbom.json \
+            --pbom-cyclonedx plumber-cyclonedx-sbom.json || code=$?
+
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY" || true
+          import json
+          from pathlib import Path
+
+          p = Path("plumber-report.json")
+          print("## Plumber")
+          if not p.exists():
+              print("\n_Report unavailable; inspect the job log._")
+              raise SystemExit
+
+          d = json.loads(p.read_text())
+          score = d.get("plumberScore") or {}
+          counts = score.get("counts") or {}
+          print(f"\n**Score:** {score.get('score', 'unavailable')} ({score.get('finalPoints', 'unavailable')}/100)")
+          print(
+              f"\nCritical {counts.get('critical', 0)} · "
+              f"High {counts.get('high', 0)} · "
+              f"Medium {counts.get('medium', 0)} · "
+              f"Low {counts.get('low', 0)}"
+          )
+          PY
+
+          case "${code}" in
+            0) exit 0 ;;
+            1)
+              echo "::error::Plumber score is below the enforced 100-point baseline."
+              exit 1
+              ;;
+            2)
+              echo "::error::Plumber configuration or runtime failure."
+              exit 1
+              ;;
+            3)
+              echo "::error::Plumber could not verify one or more checks."
+              exit 1
+              ;;
+            *)
+              echo "::error::Unexpected Plumber exit code ${code}."
+              exit 1
+              ;;
+          esac
+
+      - name: Upload SARIF to Code Scanning
+        if: ${{ always() && hashFiles('repo/plumber.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
+        with:
+          sarif_file: repo/plumber.sarif
+
+      - name: Upload Plumber reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: plumber-security-reports
+          path: |
+            repo/plumber-report.json
+            repo/plumber-pbom.json
+            repo/plumber-cyclonedx-sbom.json
+            repo/plumber.sarif
+          if-no-files-found: ignore
+          retention-days: 30
