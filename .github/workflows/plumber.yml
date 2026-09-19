@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 concurrency:
   group: plumber-${{ github.workflow }}-${{ github.ref }}
@@ -22,19 +21,87 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - name: Checkout without marketplace actions
+        env:
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          git clone --filter=blob:none "https://github.com/${REPO}.git" repo
+          cd repo
+          git checkout "${SHA}"
+
+      - name: Install and verify Plumber v0.5.2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLUMBER_VERSION: v0.5.2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          base="https://github.com/getplumber/plumber/releases/download/${PLUMBER_VERSION}"
+
+          curl -fsSL -o "${tmp}/plumber" "${base}/plumber-linux-amd64"
+          curl -fsSL -o "${tmp}/checksums.txt" "${base}/checksums.txt"
+
+          line="$(grep '  plumber-linux-amd64$' "${tmp}/checksums.txt")"
+          (cd "${tmp}" && printf '%s\n' "${line}" | sed 's/plumber-linux-amd64$/plumber/' | sha256sum -c -)
+
+          gh attestation verify "${tmp}/plumber" --repo getplumber/plumber
+
+          chmod +x "${tmp}/plumber"
+          echo "${tmp}" >> "${GITHUB_PATH}"
 
       - name: Analyze GitHub Actions security
-        uses: getplumber/plumber@d37150cee04d6627497cb4c6a553ef9a2d6c7548 # v0.5.2
-        with:
-          version: v0.5.2
-          verify-attestation: true
-          config-file: .plumber.yaml
-          soft-fail: true
-          score-push: false
-          upload-sarif: true
-          upload-artifacts: true
-          artifact-name: plumber-security-reports
+        working-directory: repo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          code=0
+          plumber analyze \
+            --config .plumber.yaml \
+            --output plumber-report.json \
+            --sarif plumber.sarif \
+            --pbom plumber-pbom.json \
+            --pbom-cyclonedx plumber-cyclonedx-sbom.json || code=$?
+
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY" || true
+          import json
+          from pathlib import Path
+
+          p = Path("plumber-report.json")
+          print("## Plumber")
+          if not p.exists():
+              print("\n_Report unavailable; inspect the job log._")
+              raise SystemExit
+
+          d = json.loads(p.read_text())
+          score = d.get("plumberScore") or {}
+          counts = score.get("counts") or {}
+          print(f"\n**Score:** {score.get('score', 'unavailable')} ({score.get('finalPoints', 'unavailable')}/100)")
+          print(
+              f"\nCritical {counts.get('critical', 0)} · "
+              f"High {counts.get('high', 0)} · "
+              f"Medium {counts.get('medium', 0)} · "
+              f"Low {counts.get('low', 0)}"
+          )
+          PY
+
+          case "${code}" in
+            0) exit 0 ;;
+            1)
+              echo "::warning::Plumber findings detected; observation mode keeps this PR non-blocking."
+              exit 0
+              ;;
+            2)
+              echo "::error::Plumber configuration or runtime failure."
+              exit 1
+              ;;
+            3)
+              echo "::error::Plumber could not verify one or more checks."
+              exit 1
+              ;;
+            *)
+              echo "::error::Unexpected Plumber exit code ${code}."
+              exit 1
+              ;;
+          esac
