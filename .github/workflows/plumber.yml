@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  security-events: write
 
 concurrency:
   group: plumber-${{ github.workflow }}-${{ github.ref }}
@@ -106,3 +107,22 @@ jobs:
               exit 1
               ;;
           esac
+
+      - name: Upload SARIF to Code Scanning
+        if: ${{ always() && hashFiles('repo/plumber.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
+        with:
+          sarif_file: repo/plumber.sarif
+
+      - name: Upload Plumber reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: plumber-security-reports
+          path: |
+            repo/plumber-report.json
+            repo/plumber-pbom.json
+            repo/plumber-cyclonedx-sbom.json
+            repo/plumber.sarif
+          if-no-files-found: ignore
+          retention-days: 30
