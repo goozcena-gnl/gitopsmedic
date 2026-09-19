@@ -61,6 +61,7 @@ jobs:
           plumber analyze \
             --config .plumber.yaml \
             --min-points 100 \
+            --fail-warnings \
             --output plumber-report.json \
             --sarif plumber.sarif \
             --pbom plumber-pbom.json \
