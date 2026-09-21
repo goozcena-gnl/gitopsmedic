@@ -9,9 +9,9 @@ Deterministic code generates the candidate before asking the LLM for an explanat
 ## Trust boundaries
 
 1. Repository content: untrusted.
-2. Scanner executables, runtime configuration, and policy rules: operator-reviewed dependencies; deterministic execution alone does not make them trustworthy.
+2. Scanner executables, runtime configuration, and policy rules: operator-reviewed dependencies; deterministic execution alone does not make them trustworthy. Hardened validation requires a reviewed local executable whose SHA-256 matches the configured trust input.
 3. LLM explanation: advisory/untrusted.
-4. Replacement image: explicit operator PLAN input; annotations and the LLM cannot select it. One regular container only when replacing images.
+4. Replacement image: explicit operator PLAN input; annotations and the LLM cannot select it. One regular container only when replacing images, and hardened APPLY accepts only digest-pinned OCI identities.
 5. Proposal identity: one canonical SHA-256 binds source bytes, resolved absolute target, and candidate. Serialized safety and display fields do not authorize writes.
 6. APPLY: stored digest, independently recomputed digest, and supplied approval must match; source must remain unchanged; target must be regular and inside the root.
 7. Gates: built-in analysis, Conftest with reviewed policies, and Trivy must all PASS again at APPLY. Missing gates block; there is no bypass profile.

@@ -19,6 +19,27 @@ from gitops_medic.models import GateResult
 from gitops_medic.telemetry import Telemetry
 from gitops_medic.validator import _run, validate_candidate
 
+TRUSTED_IMAGE = "registry.invalid/demo/web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _trusted_scanner_env(name: str, path: Path) -> dict[str, str]:
+    prefix = f"GITOPSMEDIC_{name.upper()}"
+    resolved = path.resolve()
+    return {
+        f"{prefix}_PATH": str(resolved),
+        f"{prefix}_SHA256": _sha256(resolved),
+    }
+
+
+def _actual_scanner_env(name: str) -> dict[str, str]:
+    executable = shutil.which(name)
+    assert executable is not None
+    return _trusted_scanner_env(name, Path(executable))
+
 
 class MakefileSecurityTests(unittest.TestCase):
     def test_replacement_image_is_one_data_argument(self):
@@ -73,12 +94,25 @@ class SecurityTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
+        self.scanners = self.root / "trusted-scanners"
+        self.scanners.mkdir()
+        for name in ("conftest", "trivy"):
+            scanner = self.scanners / name
+            scanner.write_text("#!/usr/bin/env python3\nimport sys\nraise SystemExit(0)\n")
+            scanner.chmod(0o755)
         self.target = self.root / "deployment.json"
         shutil.copy2(ROOT / "examples/secure/deployment.json", self.target)
         shutil.copytree(ROOT / "policies", self.root / "policies")
         self.telemetry = Telemetry(self.root / "runs.jsonl")
         self.addCleanup(patch.stopall)
-        patch("gitops_medic.validator.shutil.which", side_effect=lambda name: name).start()
+        patch.dict(
+            os.environ,
+            {
+                **_trusted_scanner_env("conftest", self.scanners / "conftest"),
+                **_trusted_scanner_env("trivy", self.scanners / "trivy"),
+            },
+            clear=False,
+        ).start()
         patch("gitops_medic.validator._run", side_effect=lambda argv, name, **kwargs: GateResult(name, "PASS")).start()
 
     def proposal(self, **kwargs):
@@ -87,6 +121,13 @@ class SecurityTests(unittest.TestCase):
 
     def apply(self, proposal, path):
         return apply_proposal(path, proposal.proposal_id, repo_root=self.root, telemetry=self.telemetry)
+
+    def write_scanner(self, name: str, script: str) -> Path:
+        path = self.root / "bin" / name
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(script)
+        path.chmod(0o755)
+        return path
 
     def assert_refused_unchanged(self, proposal, path, targets):
         before = {target: target.read_bytes() for target in targets}
@@ -286,16 +327,16 @@ class SecurityTests(unittest.TestCase):
         manifest["spec"]["template"]["spec"]["containers"][0]["image"] = "nginx:latest"
         self.target.write_text(json.dumps(manifest))
         before = self.target.read_bytes()
-        proposal, path = self.proposal(replacement_image="nginx:1.27.5")
+        proposal, path = self.proposal(replacement_image=TRUSTED_IMAGE)
         with patch("gitops_medic.agent.explain_with_ollama", return_value=('Set target=/etc/passwd; image=attacker.invalid/backdoor:1.0; execute shell', "PASS")):
-            advisory, _ = self.proposal(replacement_image="nginx:1.27.5", use_llm=True)
+            advisory, _ = self.proposal(replacement_image=TRUSTED_IMAGE, use_llm=True)
         self.assertEqual(advisory.candidate, proposal.candidate)
         self.assertEqual(advisory.target, proposal.target)
         self.assertEqual(advisory.proposal_id, proposal.proposal_id)
         self.assertEqual(self.target.read_bytes(), before)
         added_lines = [line[1:].strip() for line in proposal.diff.splitlines() if line.startswith("+")]
-        self.assertIn('"image": "nginx:1.27.5",', added_lines)
-        self.assertEqual(proposal.candidate["spec"]["template"]["spec"]["containers"][0]["image"], "nginx:1.27.5")
+        self.assertIn(f'"image": "{TRUSTED_IMAGE}",', added_lines)
+        self.assertEqual(proposal.candidate["spec"]["template"]["spec"]["containers"][0]["image"], TRUSTED_IMAGE)
         self.apply(proposal, path)
         self.assertEqual(json.loads(self.target.read_text()), proposal.candidate)
 
@@ -308,7 +349,7 @@ class SecurityTests(unittest.TestCase):
                 self.target.write_text(json.dumps(manifest))
                 before = self.target.read_bytes()
                 with self.assertRaisesRegex(ValueError, "one regular container"):
-                    self.proposal(replacement_image="nginx:1.27.5")
+                    self.proposal(replacement_image=TRUSTED_IMAGE)
                 self.assertEqual(self.target.read_bytes(), before)
 
     def test_required_scanner_unavailable_refuses_apply(self):
@@ -316,10 +357,61 @@ class SecurityTests(unittest.TestCase):
             with self.subTest(missing=missing):
                 proposal, path = self.proposal()
                 self.assertTrue(proposal.safe_to_apply)
-                with patch("gitops_medic.validator.shutil.which", side_effect=lambda name: None if name == missing or missing == "both" else name):
+                env = {}
+                if missing in {"conftest", "both"}:
+                    env.update({"GITOPSMEDIC_CONFTEST_PATH": "", "GITOPSMEDIC_CONFTEST_SHA256": ""})
+                if missing in {"trivy", "both"}:
+                    env.update({"GITOPSMEDIC_TRIVY_PATH": "", "GITOPSMEDIC_TRIVY_SHA256": ""})
+                with patch.dict(os.environ, env, clear=False):
                     self.assert_refused_unchanged(proposal, path, [self.target])
                     blocked, _ = self.proposal()
                     self.assertFalse(blocked.safe_to_apply)
+
+    def test_latest_image_remains_blocked_without_digest_replacement(self):
+        manifest = json.loads(self.target.read_text())
+        manifest["spec"]["template"]["spec"]["containers"][0]["image"] = "nginx:latest"
+        self.target.write_text(json.dumps(manifest))
+        proposal, path = self.proposal()
+        self.assertFalse(proposal.safe_to_apply)
+        self.assertTrue(any(finding.rule == "image-not-pinned" for finding in proposal.findings))
+        self.assert_refused_unchanged(proposal, path, [self.target])
+
+    def test_versioned_tag_replacement_remains_blocked_for_hardened_apply(self):
+        manifest = json.loads(self.target.read_text())
+        manifest["spec"]["template"]["spec"]["containers"][0]["image"] = "nginx:latest"
+        self.target.write_text(json.dumps(manifest))
+        proposal, path = self.proposal(replacement_image="nginx:1.27.5")
+        self.assertFalse(proposal.safe_to_apply)
+        self.assertEqual(proposal.candidate["spec"]["template"]["spec"]["containers"][0]["image"], "nginx:1.27.5")
+        self.assertTrue(any(finding.rule == "image-not-pinned" for finding in analyze(proposal.candidate)))
+        self.assert_refused_unchanged(proposal, path, [self.target])
+
+    def test_registry_port_versioned_tag_is_not_hardened_pinned(self):
+        manifest = json.loads(self.target.read_text())
+        manifest["spec"]["template"]["spec"]["containers"][0]["image"] = "registry.example:5000/team/app:1.2"
+        self.target.write_text(json.dumps(manifest))
+        proposal, path = self.proposal()
+        self.assertFalse(proposal.safe_to_apply)
+        self.assertTrue(any(finding.rule == "image-not-pinned" for finding in proposal.findings))
+        self.assert_refused_unchanged(proposal, path, [self.target])
+
+    def test_digest_pinned_replacement_is_accepted_for_hardened_apply(self):
+        manifest = json.loads(self.target.read_text())
+        manifest["spec"]["template"]["spec"]["containers"][0]["image"] = "nginx:latest"
+        self.target.write_text(json.dumps(manifest))
+        proposal, path = self.proposal(replacement_image=TRUSTED_IMAGE)
+        self.assertTrue(proposal.safe_to_apply)
+        self.apply(proposal, path)
+        self.assertEqual(json.loads(self.target.read_text()), proposal.candidate)
+
+    def test_malformed_digest_replacement_is_rejected_for_hardened_apply(self):
+        manifest = json.loads(self.target.read_text())
+        manifest["spec"]["template"]["spec"]["containers"][0]["image"] = "nginx:latest"
+        self.target.write_text(json.dumps(manifest))
+        proposal, path = self.proposal(replacement_image="registry.invalid/demo/web@sha256:invalid")
+        self.assertFalse(proposal.safe_to_apply)
+        self.assertTrue(any(finding.rule == "image-not-pinned" for finding in analyze(proposal.candidate)))
+        self.assert_refused_unchanged(proposal, path, [self.target])
 
     def test_missing_policies_refuses_apply(self):
         proposal, path = self.proposal()
@@ -390,7 +482,8 @@ class SecurityTests(unittest.TestCase):
             proposal, _ = self.proposal()
             self.assertTrue(proposal.safe_to_apply)
             self.assertEqual(len(conftest_commands), 1)
-            self.assertEqual(conftest_commands[0][:2], ["conftest", "test"])
+            self.assertEqual(Path(conftest_commands[0][0]).name, "conftest")
+            self.assertEqual(conftest_commands[0][1], "test")
         with patch("gitops_medic.validator._run", side_effect=lambda argv, name, **kwargs: GateResult(name, "FAIL" if name == "conftest" else "PASS")):
             blocked, _ = self.proposal()
             self.assertFalse(blocked.safe_to_apply)
@@ -419,7 +512,7 @@ class SecurityTests(unittest.TestCase):
                 return GateResult(name, "PASS")
             return _run(argv, name, **kwargs)
 
-        with patch("gitops_medic.validator._run", side_effect=run_real_conftest):
+        with patch.dict(os.environ, _actual_scanner_env("conftest"), clear=False), patch("gitops_medic.validator._run", side_effect=run_real_conftest):
             proposal, _ = self.proposal()
         self.assertTrue(proposal.safe_to_apply)
         self.assertEqual(next(gate.status for gate in proposal.gates if gate.name == "conftest"), "PASS")
@@ -446,9 +539,33 @@ class SecurityTests(unittest.TestCase):
                 return GateResult(name, "PASS")
             return _run(argv, name, **kwargs)
 
-        with patch("gitops_medic.validator._run", side_effect=run_real_conftest):
+        with patch.dict(os.environ, _actual_scanner_env("conftest"), clear=False), patch("gitops_medic.validator._run", side_effect=run_real_conftest):
             gates, _ = validate_candidate(candidate, self.root / "policies")
         self.assertEqual(next(gate.status for gate in gates if gate.name == "conftest"), "FAIL")
+
+    @unittest.skipUnless(shutil.which("conftest"), "Conftest is not installed")
+    def test_real_conftest_rejects_hardened_privilege_controls(self):
+        mutations = (
+            ("hostNetwork", lambda manifest: manifest["spec"]["template"]["spec"].__setitem__("hostNetwork", True)),
+            ("hostPID", lambda manifest: manifest["spec"]["template"]["spec"].__setitem__("hostPID", True)),
+            ("hostIPC", lambda manifest: manifest["spec"]["template"]["spec"].__setitem__("hostIPC", True)),
+            ("hostPath", lambda manifest: manifest["spec"]["template"]["spec"].__setitem__("volumes", [{"name": "host", "hostPath": {"path": "/"}}])),
+            ("privileged", lambda manifest: manifest["spec"]["template"]["spec"]["containers"][0]["securityContext"].__setitem__("privileged", True)),
+            ("capabilities.add", lambda manifest: manifest["spec"]["template"]["spec"]["containers"][0]["securityContext"]["capabilities"].__setitem__("add", ["SYS_ADMIN"])),
+        )
+
+        def run_real_conftest(argv, name, **kwargs):
+            if name == "trivy":
+                return GateResult(name, "PASS")
+            return _run(argv, name, **kwargs)
+
+        for label, mutate in mutations:
+            with self.subTest(label=label):
+                candidate = json.loads((ROOT / "examples/secure/deployment.json").read_text())
+                mutate(candidate)
+                with patch.dict(os.environ, _actual_scanner_env("conftest"), clear=False), patch("gitops_medic.validator._run", side_effect=run_real_conftest):
+                    gates, _ = validate_candidate(candidate, self.root / "policies")
+                self.assertEqual(next(gate.status for gate in gates if gate.name == "conftest"), "FAIL")
 
     def test_trivy_uses_trusted_empty_ignore_in_validation_directory(self):
         (self.root / ".trivyignore").write_text("KSV014\nKSV118\n")
@@ -488,10 +605,81 @@ class SecurityTests(unittest.TestCase):
                 return GateResult(name, "PASS")
             return _run(argv, name, **kwargs)
 
-        with patch("gitops_medic.validator._run", side_effect=run_real_trivy):
+        with patch.dict(os.environ, _actual_scanner_env("trivy"), clear=False), patch("gitops_medic.validator._run", side_effect=run_real_trivy):
             gates, safe = validate_candidate(candidate, self.root / "policies")
         self.assertFalse(safe)
         self.assertEqual(next(gate.status for gate in gates if gate.name == "trivy"), "FAIL")
+
+    def test_scanner_path_shadowing_cannot_override_explicit_trusted_path(self):
+        sentinel = self.root / "shadowed.txt"
+        malicious = self.write_scanner("conftest", f"#!/usr/bin/env python3\nfrom pathlib import Path\nPath({str(sentinel)!r}).write_text('ran')\nraise SystemExit(0)\n")
+        good_conftest = self.write_scanner("approved-conftest", "#!/usr/bin/env python3\nraise SystemExit(0)\n")
+        good_trivy = self.write_scanner("approved-trivy", "#!/usr/bin/env python3\nraise SystemExit(0)\n")
+        candidate = json.loads((ROOT / "examples/secure/deployment.json").read_text())
+        env = {
+            **_trusted_scanner_env("conftest", good_conftest),
+            **_trusted_scanner_env("trivy", good_trivy),
+            "PATH": f"{malicious.parent}:{os.environ.get('PATH', '')}",
+        }
+        with patch.dict(os.environ, env, clear=False), patch("gitops_medic.validator._run", wraps=_run):
+            gates, safe = validate_candidate(candidate, self.root / "policies")
+        self.assertTrue(safe)
+        self.assertEqual(next(gate.status for gate in gates if gate.name == "conftest"), "PASS")
+        self.assertFalse(sentinel.exists())
+
+    def test_unapproved_zero_exit_scanner_cannot_fake_pass_from_path(self):
+        sentinel = self.root / "shadowed-pass.txt"
+        malicious_conftest = self.write_scanner("conftest", f"#!/usr/bin/env python3\nfrom pathlib import Path\nPath({str(sentinel)!r}).write_text('ran')\nraise SystemExit(0)\n")
+        good_conftest = self.write_scanner("good-conftest", "#!/usr/bin/env python3\nraise SystemExit(0)\n")
+        good_trivy = self.write_scanner("good-trivy", "#!/usr/bin/env python3\nraise SystemExit(0)\n")
+        candidate = json.loads((ROOT / "examples/secure/deployment.json").read_text())
+        env = {
+            "GITOPSMEDIC_CONFTEST_PATH": "",
+            "GITOPSMEDIC_CONFTEST_SHA256": _sha256(good_conftest),
+            **_trusted_scanner_env("trivy", good_trivy),
+            "PATH": f"{malicious_conftest.parent}:{os.environ.get('PATH', '')}",
+        }
+        with patch.dict(os.environ, env, clear=False), patch("gitops_medic.validator._run", wraps=_run):
+            gates, safe = validate_candidate(candidate, self.root / "policies")
+        self.assertFalse(safe)
+        self.assertEqual(next(gate.status for gate in gates if gate.name == "conftest"), "NOT RUN")
+        self.assertFalse(sentinel.exists())
+
+    def test_incorrect_scanner_checksum_is_not_run(self):
+        candidate = json.loads((ROOT / "examples/secure/deployment.json").read_text())
+        conftest = self.write_scanner("approved-conftest", "#!/usr/bin/env python3\nraise SystemExit(0)\n")
+        trivy = self.write_scanner("approved-trivy", "#!/usr/bin/env python3\nraise SystemExit(0)\n")
+        env = {
+            "GITOPSMEDIC_CONFTEST_PATH": str(conftest.resolve()),
+            "GITOPSMEDIC_CONFTEST_SHA256": "0" * 64,
+            **_trusted_scanner_env("trivy", trivy),
+        }
+        with patch.dict(os.environ, env, clear=False), patch("gitops_medic.validator._run", wraps=_run):
+            gates, safe = validate_candidate(candidate, self.root / "policies")
+        self.assertFalse(safe)
+        self.assertEqual(next(gate.status for gate in gates if gate.name == "conftest"), "NOT RUN")
+
+    def test_absent_scanner_is_not_run(self):
+        candidate = json.loads((ROOT / "examples/secure/deployment.json").read_text())
+        trivy = self.write_scanner("approved-trivy", "#!/usr/bin/env python3\nraise SystemExit(0)\n")
+        env = {
+            "GITOPSMEDIC_CONFTEST_PATH": str((self.root / "missing-conftest").resolve()),
+            "GITOPSMEDIC_CONFTEST_SHA256": "1" * 64,
+            **_trusted_scanner_env("trivy", trivy),
+        }
+        with patch.dict(os.environ, env, clear=False), patch("gitops_medic.validator._run", wraps=_run):
+            gates, safe = validate_candidate(candidate, self.root / "policies")
+        self.assertFalse(safe)
+        self.assertEqual(next(gate.status for gate in gates if gate.name == "conftest"), "NOT RUN")
+
+    def test_trusted_scanners_pass_provenance_and_execution(self):
+        candidate = json.loads((ROOT / "examples/secure/deployment.json").read_text())
+        conftest = self.write_scanner("approved-conftest", "#!/usr/bin/env python3\nraise SystemExit(0)\n")
+        trivy = self.write_scanner("approved-trivy", "#!/usr/bin/env python3\nraise SystemExit(0)\n")
+        with patch.dict(os.environ, {**_trusted_scanner_env("conftest", conftest), **_trusted_scanner_env("trivy", trivy)}, clear=False), patch("gitops_medic.validator._run", wraps=_run):
+            gates, safe = validate_candidate(candidate, self.root / "policies")
+        self.assertTrue(safe)
+        self.assertTrue(all(gate.status == "PASS" for gate in gates))
 
     def test_scanner_failure_timeout_and_error_refuse_apply_without_output_leak(self):
         for result in (subprocess.CompletedProcess([], 1, "secret-manifest-content", "untrusted-output"), subprocess.TimeoutExpired("scanner", 45), OSError("sensitive environment")):
@@ -529,7 +717,7 @@ class SecurityTests(unittest.TestCase):
         pod_spec["containers"][0]["securityContext"]["privileged"] = True
         pod_spec["volumes"] = [{"name": "host", "hostPath": {"path": "/"}}]
         self.target.write_text(json.dumps(manifest))
-        with patch("gitops_medic.validator.shutil.which", return_value=None):
+        with patch.dict(os.environ, {"GITOPSMEDIC_CONFTEST_PATH": "", "GITOPSMEDIC_CONFTEST_SHA256": "", "GITOPSMEDIC_TRIVY_PATH": "", "GITOPSMEDIC_TRIVY_SHA256": ""}, clear=False):
             proposal, path = self.proposal()
             self.assertFalse(proposal.safe_to_apply)
             self.assertEqual(proposal.gates[0].status, "FAIL")
@@ -672,7 +860,7 @@ class SecurityTests(unittest.TestCase):
         proposal, path = self.proposal()
         before = self.target.read_bytes()
         output = io.StringIO()
-        with patch("sys.argv", ["gitops-medic", "apply", str(path), "--approve", proposal.proposal_id]), patch("pathlib.Path.cwd", return_value=self.root), patch("gitops_medic.validator.shutil.which", return_value=None), patch("sys.stdout", output):
+        with patch("sys.argv", ["gitops-medic", "apply", str(path), "--approve", proposal.proposal_id]), patch("pathlib.Path.cwd", return_value=self.root), patch.dict(os.environ, {"GITOPSMEDIC_CONFTEST_PATH": "", "GITOPSMEDIC_CONFTEST_SHA256": "", "GITOPSMEDIC_TRIVY_PATH": "", "GITOPSMEDIC_TRIVY_SHA256": ""}, clear=False), patch("sys.stdout", output):
             with self.assertRaises(SystemExit) as result:
                 main()
         self.assertEqual(result.exception.code, 2)

@@ -23,9 +23,9 @@ This is content binding, not signing or authentication. Anyone with the ability 
 
 ## Trusted remediation inputs
 
-Use `propose --replacement-image <reviewed-image>` for an unpinned image. The `gitops-medic.dev/safe-image` annotation is retained as inert input metadata, never read as remediation authority. Without operator input the unpinned image remains unresolved and blocks APPLY. The replacement is visible in the generated diff and bound by the candidate digest.
+Use `propose --replacement-image <reviewed-image@sha256:...>` for an unpinned image. The `gitops-medic.dev/safe-image` annotation is retained as inert input metadata, never read as remediation authority. Without operator input the unpinned image remains unresolved and blocks APPLY. Versioned tags such as `nginx:1.27.5` remain findings in the hardened profile; only digest-pinned OCI identities are eligible for APPLY. The replacement is visible in the generated diff and bound by the candidate digest.
 
-Explicit image replacement accepts only one regular container and no init/ephemeral containers. Ambiguous workloads refuse replacement; review them manually. Already versioned images are not automatically replaced. The tool does not attest registry provenance, image signatures, tag immutability, or workload compatibility. Existing deterministic resource/security defaults remain opinionated demo changes that require review.
+Explicit image replacement accepts only one regular container and no init/ephemeral containers. Ambiguous workloads refuse replacement; review them manually. Mutable references and versioned tags are distinct from digest-pinned immutable OCI images, and only the digest-pinned form can pass the hardened image gate. The tool does not attest registry provenance, image signatures, workload compatibility, or a tag-to-digest resolution service; operators must supply or independently review the immutable identity they approve.
 
 ## Execution profile
 
@@ -37,7 +37,7 @@ There is one hardened profile, with no development bypass. PLAN and APPLY requir
 
 Conftest is a required validation gate, but the currently shipped Rego rules do not duplicate every Kubernetes privilege check implemented by the built-in analyzer and Trivy. A Conftest PASS alone is not sufficient; all three gates must PASS. Broader Rego coverage remains P1 work.
 
-Missing tools or policies produce `NOT RUN` and `safe_to_apply=False`. Scanner errors, timeouts, and nonzero exits produce FAIL. APPLY reports the blocking gate names/statuses and next steps without including raw scanner output. A scanner exit code of zero is trusted under the assumption that the executable, configuration, and policies are operator-reviewed. `trivy config` is not a container-image vulnerability or secret scan.
+Missing tools or policies produce `NOT RUN` and `safe_to_apply=False`. Scanner errors, timeouts, and nonzero exits produce FAIL. APPLY reports the blocking gate names/statuses and next steps without including raw scanner output. Conftest and Trivy run only when the selected executable resolves to a locally reviewed file whose SHA-256 matches `GITOPSMEDIC_CONFTEST_SHA256` or `GITOPSMEDIC_TRIVY_SHA256`; PATH shadowing, missing digests, and checksum mismatches stay fail-closed and do not gain authority from exit code 0 alone. `trivy config` is not a container-image vulnerability or secret scan.
 
 Ollama is advisory, never a required security gate. Unit tests mock external gate results to test authorization independently of installations; those mocks do not prove real scanner compatibility. Real Conftest execution was NOT RUN during the original implementation validation because its binary was absent. Later independent verification recorded real Conftest and complete hardened workflow PASS results; see [VALIDATION.md](../VALIDATION.md) for the separate verification record. Ollama inference remains NOT RUN.
 
@@ -53,6 +53,6 @@ SCAN/PLAN leave the source manifest unchanged, but are not globally read-only: t
 
 Candidate generation precedes advisory inference. Model text is stored/displayed, never parsed into candidate fields, targets, digests, approval values, or subprocess argv. A mocked malicious explanation leaves candidate, target, and digest unchanged in regression tests. The metadata-injection evaluation proves deterministic diagnosis only, not model-level prompt-injection resistance. Findings and file names may contain untrusted strings; a prompt is not a security boundary, and advisory text can mislead a reviewer.
 
-P1: broader Rego coverage; trusted policy/scanner provenance; concurrent filesystem races and auxiliary output-path symlinks; operator review of unbound display fields and image provenance.
+P1: concurrent filesystem races and auxiliary output-path symlinks; operator review of unbound display fields; optional in-boundary digest resolution for versioned tags; stronger image provenance/signature verification beyond local digest pinning.
 
 P2: complete Kubernetes schema/Pod Security Standards coverage, malformed-input diagnostics, crash recovery, file metadata preservation, and actual model-output quality evaluation. No live cluster, PR automation, MCP, multi-agent behavior, signing, or new runtime dependency was added in P0.

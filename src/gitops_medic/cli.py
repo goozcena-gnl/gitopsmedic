@@ -60,10 +60,10 @@ def build_parser():
     sub = p.add_subparsers(dest="command", required=True)
     s = sub.add_parser("scan"); s.add_argument("target"); s.set_defaults(func=cmd_scan)
     pr = sub.add_parser("propose"); pr.add_argument("target"); pr.add_argument("--llm", action="store_true"); pr.set_defaults(func=cmd_propose)
-    pr.add_argument("--replacement-image", help="Operator-reviewed image for one regular container; never sourced from manifest metadata")
+    pr.add_argument("--replacement-image", help="Operator-reviewed digest-pinned OCI image for one regular container; never sourced from manifest metadata")
     ap = sub.add_parser("apply"); ap.add_argument("proposal"); ap.add_argument("--approve", required=True); ap.set_defaults(func=cmd_apply)
     d = sub.add_parser("demo"); d.add_argument("--llm", action="store_true"); d.set_defaults(func=cmd_demo)
-    d.add_argument("--replacement-image", help="Operator-reviewed image for the temporary demo workload")
+    d.add_argument("--replacement-image", help="Operator-reviewed digest-pinned OCI image for the temporary demo workload")
     return p
 
 def main():

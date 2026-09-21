@@ -14,7 +14,7 @@ The model is useful, but never authoritative. **Ollama can explain and prioritiz
 
 ## Architecture
 
-The deterministic remediator takes the manifest and an optional operator-reviewed replacement image. Built-in checks, Conftest, and Trivy validate the candidate. APPLY recomputes the source/target/candidate digest, checks approval and source freshness, reruns all gates, then uses exclusive temporary-file creation and atomic replacement. Ollama only supplies explanation text. See [architecture](docs/architecture.md).
+The deterministic remediator takes the manifest and an optional operator-reviewed digest-pinned replacement image. Built-in checks, Conftest, and Trivy validate the candidate. APPLY recomputes the source/target/candidate digest, checks approval and source freshness, reruns all gates, then uses exclusive temporary-file creation and atomic replacement. Ollama only supplies explanation text. See [architecture](docs/architecture.md).
 
 ## MVP features
 
@@ -32,22 +32,22 @@ The deterministic remediator takes the manifest and an optional operator-reviewe
 
 ## Quick start
 
-Requires Python 3.11+. The core MVP has **zero mandatory Python package dependencies**. The hardened APPLY profile additionally requires Conftest, reviewed Rego policies, and Trivy on PATH. No missing-tool bypass is provided.
+Requires Python 3.11+. The core MVP has **zero mandatory Python package dependencies**. The hardened APPLY profile additionally requires reviewed Rego policies plus locally trusted Conftest and Trivy executables whose SHA-256 values are configured with `GITOPSMEDIC_CONFTEST_{PATH,SHA256}` and `GITOPSMEDIC_TRIVY_{PATH,SHA256}`. No missing-tool bypass is provided.
 
 ```bash
 git clone https://github.com/goozcena-gnl/gitopsmedic.git gitops-medic
 cd gitops-medic
 make PYTHON=python3 test eval compile
-make PYTHON=python3 demo REPLACEMENT_IMAGE=nginx:1.27.5
+make PYTHON=python3 demo REPLACEMENT_IMAGE=nginx@sha256:6784fb0834aa7dbbe12e3d7471e69c290df3e6ba810dc38b34ae33d3c1c05f7d
 ```
 
-The image above is an example operator choice, not an attested image recommendation. The demo automatically supplies its token for a temporary copied manifest only; it refuses when required gates do not PASS.
+The image above is an example digest-pinned operator choice, not an attested image recommendation. Versioned tags such as `nginx:1.27.5` are not immutable and remain blocked by the hardened gate. The demo automatically supplies its token for a temporary copied manifest only; it refuses when required gates do not PASS.
 
 ### Inspect without changing the source
 
 ```bash
 make PYTHON=python3 scan
-make PYTHON=python3 propose REPLACEMENT_IMAGE=nginx:1.27.5
+make PYTHON=python3 propose REPLACEMENT_IMAGE=nginx@sha256:6784fb0834aa7dbbe12e3d7471e69c290df3e6ba810dc38b34ae33d3c1c05f7d
 ```
 
 `scan` returns nonzero for HIGH/CRITICAL findings. `propose` saves a proposal and prints its 64-character `proposal_id`; it exits 2 if any required gate does not PASS. Both commands can write telemetry, and PLAN also writes temporary validation files and a proposal. They preserve the source manifest, not every filesystem path.
