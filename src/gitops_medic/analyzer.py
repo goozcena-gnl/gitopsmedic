@@ -35,7 +35,7 @@ def analyze(manifest: dict) -> list[Finding]:
         if not is_image_pinned(image):
             reference_kind = image_reference_kind(image)
             description = "mutable/unversioned image reference" if reference_kind == IMAGE_REFERENCE_MUTABLE else "versioned tag"
-            findings.append(Finding("image-not-pinned", "HIGH", f"Container image uses a {description}, not a digest-pinned immutable OCI image: {image or '<missing>'}.", f"{prefix}.image", "Supply a reviewed digest-pinned --replacement-image to PLAN; repository annotations are not trusted image inputs."))
+            findings.append(Finding("image-not-pinned", "HIGH", f"Container image uses a {description}, not a digest-pinned immutable OCI image: {image or '<missing>'}.", f"{prefix}.image", "Supply a reviewed digest-pinned --replacement-image to propose; repository annotations are not trusted image inputs."))
         resources = container.get("resources") or {}
         if not resources.get("requests") or not resources.get("limits"):
             findings.append(Finding("resources-required", "MEDIUM", "Container does not define both resource requests and limits.", f"{prefix}.resources", "Add explicit CPU and memory requests/limits."))
