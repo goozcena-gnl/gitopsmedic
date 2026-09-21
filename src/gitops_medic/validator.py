@@ -15,7 +15,7 @@ from .models import GateResult
 
 
 REVIEWED_POLICY_SHA256 = "da64028cc8c46921363637ffe3408647c7ea95c3dacf6c465af4b188eb32719a"
-_TRUSTED_SCANNER_SHA256 = re.compile(r"[0-9a-f]{64}")
+_TRUSTED_SCANNER_SHA256 = re.compile(r"[0-9a-fA-F]{64}")
 
 
 @dataclass(frozen=True)
@@ -47,11 +47,12 @@ def _trusted_scanner_not_run(name: str, detail: str) -> tuple[None, GateResult]:
 def _trusted_scanner(name: str) -> tuple[TrustedScanner | None, GateResult | None]:
     prefix = _trusted_scanner_env_prefix(name)
     configured_path = os.environ.get(f"{prefix}_PATH", "").strip()
-    expected_sha = os.environ.get(f"{prefix}_SHA256", "").strip().lower()
+    expected_sha = os.environ.get(f"{prefix}_SHA256", "").strip()
+    normalized_expected_sha = expected_sha.lower()
     if not configured_path:
-        return _trusted_scanner_not_run(name, f"Required: set {prefix}_PATH to the reviewed local {name} executable and set {prefix}_SHA256 to its reviewed 64-character SHA-256.")
+        return _trusted_scanner_not_run(name, f"Required: set {prefix}_PATH to the reviewed local {name} executable and set {prefix}_SHA256 to its reviewed 64-character SHA-256 hex value.")
     if not _TRUSTED_SCANNER_SHA256.fullmatch(expected_sha):
-        return _trusted_scanner_not_run(name, f"Required: set {prefix}_SHA256 to the reviewed 64-character SHA-256 of the executable selected by {prefix}_PATH.")
+        return _trusted_scanner_not_run(name, f"Required: set {prefix}_SHA256 to the reviewed 64-character SHA-256 hex value of the executable selected by {prefix}_PATH.")
     path = Path(configured_path)
     if not path.is_absolute():
         return _trusted_scanner_not_run(name, f"Required: set {prefix}_PATH to an absolute path for the trusted {name} executable.")
@@ -63,7 +64,7 @@ def _trusted_scanner(name: str) -> tuple[TrustedScanner | None, GateResult | Non
         actual_sha = hashlib.sha256(resolved.read_bytes()).hexdigest()
     except OSError:
         return _trusted_scanner_not_run(name, f"Trusted {name} provenance could not be verified. Review the local path and SHA-256 configuration before rerunning validation.")
-    if actual_sha != expected_sha:
+    if actual_sha != normalized_expected_sha:
         return _trusted_scanner_not_run(name, f"Trusted {name} provenance mismatch. Review the executable selected by {prefix}_PATH and update {prefix}_SHA256 only after independent verification.")
     return TrustedScanner(name, resolved, actual_sha), None
 
