@@ -35,7 +35,7 @@ There is one hardened profile, with no development bypass. PLAN and APPLY requir
 2. Conftest using a nonempty reviewed Rego policy directory. This repository ships policies, so policy validation is always configured; absent/empty policies are not a disable switch. API PLAN can take a policy directory; CLI PLAN uses `./policies`, and APPLY always uses `<repo_root>/policies`.
 3. Trivy configuration analysis at HIGH/CRITICAL severity.
 
-Conftest is a required validation gate, but the currently shipped Rego rules do not duplicate every Kubernetes privilege check implemented by the built-in analyzer and Trivy. A Conftest PASS alone is not sufficient; all three gates must PASS. Broader Rego coverage remains P1 work.
+Conftest is a required validation gate. The shipped Rego rules now duplicate the built-in checks for hostNetwork, hostPID, hostIPC, hostPath, privileged containers, and nonempty capabilities.add across regular/init/ephemeral containers, but they still do not claim full Kubernetes schema or Pod Security Standards coverage. A Conftest PASS alone is not sufficient; all three gates must PASS.
 
 Missing tools or policies produce `NOT RUN` and `safe_to_apply=False`. Scanner errors, timeouts, and nonzero exits produce FAIL. APPLY reports the blocking gate names/statuses and next steps without including raw scanner output. Conftest and Trivy run only when the selected executable resolves to a locally reviewed file whose SHA-256 matches `GITOPSMEDIC_CONFTEST_SHA256` or `GITOPSMEDIC_TRIVY_SHA256`; PATH shadowing, missing digests, and checksum mismatches stay fail-closed and do not gain authority from exit code 0 alone. `trivy config` is not a container-image vulnerability or secret scan.
 
