@@ -64,7 +64,7 @@ def _trusted_scanner(name: str) -> tuple[TrustedScanner | None, GateResult | Non
     except OSError:
         return _trusted_scanner_not_run(name, f"Trusted {name} provenance could not be verified. Review the local path and SHA-256 configuration before rerunning validation.")
     if actual_sha != expected_sha:
-        return _trusted_scanner_not_run(name, f"Trusted {name} provenance mismatch. Review the executable selected by {prefix}_PATH/PATH and update {prefix}_SHA256 only after independent verification.")
+        return _trusted_scanner_not_run(name, f"Trusted {name} provenance mismatch. Review the executable selected by {prefix}_PATH and update {prefix}_SHA256 only after independent verification.")
     return TrustedScanner(name, resolved, actual_sha), None
 
 
