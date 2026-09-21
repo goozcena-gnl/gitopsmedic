@@ -4,7 +4,6 @@ import os
 import hashlib
 import json
 import re
-import shutil
 import stat
 import subprocess
 import tempfile
@@ -51,11 +50,10 @@ def _trusted_scanner(name: str) -> tuple[TrustedScanner | None, GateResult | Non
     expected_sha = os.environ.get(f"{prefix}_SHA256", "").strip().lower()
     if not _TRUSTED_SCANNER_SHA256.fullmatch(expected_sha):
         return _trusted_scanner_not_run(name, f"Required: set {prefix}_SHA256 to the reviewed 64-character SHA-256 of a trusted {name} executable.")
-    discovered = configured_path or shutil.which(name)
-    if not discovered:
-        return _trusted_scanner_not_run(name, f"Required: install {name} and either expose it on PATH or set {prefix}_PATH to a reviewed executable matching {prefix}_SHA256.")
-    path = Path(discovered)
-    if configured_path and not path.is_absolute():
+    if not configured_path:
+        return _trusted_scanner_not_run(name, f"Required: set {prefix}_PATH to the reviewed local {name} executable that matches {prefix}_SHA256.")
+    path = Path(configured_path)
+    if not path.is_absolute():
         return _trusted_scanner_not_run(name, f"Required: set {prefix}_PATH to an absolute path for the trusted {name} executable.")
     try:
         resolved = path.resolve(strict=True)
