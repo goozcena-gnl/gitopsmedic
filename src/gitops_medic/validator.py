@@ -25,6 +25,14 @@ class TrustedScanner:
     sha256: str
 
 
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _reviewed_policy_bytes(policy_dir: Path) -> bytes | None:
     policy = policy_dir / "kubernetes.rego"
     try:
@@ -61,7 +69,7 @@ def _trusted_scanner(name: str) -> tuple[TrustedScanner | None, GateResult | Non
         info = resolved.lstat()
         if not stat.S_ISREG(info.st_mode) or not os.access(resolved, os.X_OK):
             return _trusted_scanner_not_run(name, f"Trusted {name} path must resolve to an executable regular file.")
-        actual_sha = hashlib.sha256(resolved.read_bytes()).hexdigest()
+        actual_sha = _file_sha256(resolved)
     except OSError:
         return _trusted_scanner_not_run(name, f"Trusted {name} provenance could not be verified. Review the local path and SHA-256 configuration before rerunning validation.")
     if actual_sha != normalized_expected_sha:
