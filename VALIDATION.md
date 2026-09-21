@@ -163,12 +163,12 @@ Executed on 2026-09-21 against the current `security/p1-scanner-image-trust` wor
 | Check | Result | Command / evidence |
 |---|---|---|
 | Compile | PASS | `make PYTHON=python3 compile` |
-| Full unit suite | PASS: 63 tests | `make PYTHON=python3 test` |
-| Security regression suite | PASS: 56 tests, 4 skipped real-tool checks | `PYTHONPATH=src python3 -m unittest discover -s tests -p test_security_regressions.py -v` |
+| Full unit suite | PASS: 64 tests | `make PYTHON=python3 test` |
+| Security regression suite | PASS: 57 tests, 4 skipped real-tool checks | `PYTHONPATH=src python3 -m unittest discover -s tests -p test_security_regressions.py -v` |
 | Evaluations | PASS: 4/4 | `make PYTHON=python3 eval` |
 | Diff check | PASS | `git diff --check` |
 | Mocked hardened image regressions | PASS | Latest blocked; versioned tag blocked; registry with port parsed as versioned tag; digest-pinned replacement accepted; malformed digest blocked; proposal substitution still rejected |
-| Mocked scanner provenance regressions | PASS | Explicit trusted path wins over PATH shadowing; wrong checksum, missing scanner, and unapproved zero-exit binaries stay `NOT RUN`; approved fake scanners PASS |
+| Mocked scanner provenance regressions | PASS | Explicit trusted path wins over PATH shadowing; symlinked paths, wrong checksums, missing scanners, and unapproved zero-exit binaries stay `NOT RUN`; approved fake scanners PASS |
 | Real Conftest | NOT RUN | Binary unavailable on this runner (`command -v conftest` returned nothing) |
 | Real Trivy | NOT RUN | Binary unavailable on this runner (`command -v trivy` returned nothing) |
 | Real hardened demo | NOT RUN | Skipped because both required real scanner gates were unavailable; no `NOT RUN` gate was promoted to PASS |

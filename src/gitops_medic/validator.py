@@ -65,16 +65,15 @@ def _trusted_scanner(name: str) -> tuple[TrustedScanner | None, GateResult | Non
     if not path.is_absolute():
         return _trusted_scanner_not_run(name, f"Required: set {prefix}_PATH to an absolute path for the trusted {name} executable.")
     try:
-        resolved = path.resolve(strict=True)
-        info = resolved.lstat()
-        if not stat.S_ISREG(info.st_mode) or not os.access(resolved, os.X_OK):
-            return _trusted_scanner_not_run(name, f"Trusted {name} path must resolve to an executable regular file.")
-        actual_sha = _file_sha256(resolved)
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or not os.access(path, os.X_OK):
+            return _trusted_scanner_not_run(name, f"Trusted {name} path must be an executable regular file, not a symlink or special file.")
+        actual_sha = _file_sha256(path)
     except OSError:
         return _trusted_scanner_not_run(name, f"Trusted {name} provenance could not be verified. Review the local path and SHA-256 configuration before rerunning validation.")
     if actual_sha != normalized_expected_sha:
         return _trusted_scanner_not_run(name, f"Trusted {name} provenance mismatch. Review the executable selected by {prefix}_PATH and update {prefix}_SHA256 only after independent verification.")
-    return TrustedScanner(name, resolved, actual_sha), None
+    return TrustedScanner(name, path, actual_sha), None
 
 
 def _run(argv: list[str], name: str, cwd: Path | None = None) -> GateResult:

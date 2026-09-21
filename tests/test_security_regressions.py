@@ -672,6 +672,22 @@ class SecurityTests(unittest.TestCase):
         self.assertFalse(safe)
         self.assertEqual(next(gate.status for gate in gates if gate.name == "conftest"), "NOT RUN")
 
+    def test_symlinked_scanner_path_is_not_run(self):
+        candidate = json.loads((ROOT / "examples/secure/deployment.json").read_text())
+        conftest = self.write_scanner("approved-conftest", "#!/usr/bin/env python3\nraise SystemExit(0)\n")
+        symlinked = self.root / "symlinked-conftest"
+        symlinked.symlink_to(conftest)
+        trivy = self.write_scanner("approved-trivy", "#!/usr/bin/env python3\nraise SystemExit(0)\n")
+        env = {
+            "GITOPSMEDIC_CONFTEST_PATH": str(symlinked.absolute()),
+            "GITOPSMEDIC_CONFTEST_SHA256": _sha256(conftest),
+            **_trusted_scanner_env("trivy", trivy),
+        }
+        with patch.dict(os.environ, env, clear=False), patch("gitops_medic.validator._run", wraps=_run):
+            gates, safe = validate_candidate(candidate, self.root / "policies")
+        self.assertFalse(safe)
+        self.assertEqual(next(gate.status for gate in gates if gate.name == "conftest"), "NOT RUN")
+
     def test_trusted_scanners_pass_provenance_and_execution(self):
         candidate = json.loads((ROOT / "examples/secure/deployment.json").read_text())
         conftest = self.write_scanner("approved-conftest", "#!/usr/bin/env python3\nraise SystemExit(0)\n")
