@@ -48,10 +48,10 @@ def _trusted_scanner(name: str) -> tuple[TrustedScanner | None, GateResult | Non
     prefix = _trusted_scanner_env_prefix(name)
     configured_path = os.environ.get(f"{prefix}_PATH", "").strip()
     expected_sha = os.environ.get(f"{prefix}_SHA256", "").strip().lower()
-    if not _TRUSTED_SCANNER_SHA256.fullmatch(expected_sha):
-        return _trusted_scanner_not_run(name, f"Required: set {prefix}_SHA256 to the reviewed 64-character SHA-256 of a trusted {name} executable.")
     if not configured_path:
-        return _trusted_scanner_not_run(name, f"Required: set {prefix}_PATH to the reviewed local {name} executable that matches {prefix}_SHA256.")
+        return _trusted_scanner_not_run(name, f"Required: set {prefix}_PATH to the reviewed local {name} executable and set {prefix}_SHA256 to its reviewed 64-character SHA-256.")
+    if not _TRUSTED_SCANNER_SHA256.fullmatch(expected_sha):
+        return _trusted_scanner_not_run(name, f"Required: set {prefix}_SHA256 to the reviewed 64-character SHA-256 of the executable selected by {prefix}_PATH.")
     path = Path(configured_path)
     if not path.is_absolute():
         return _trusted_scanner_not_run(name, f"Required: set {prefix}_PATH to an absolute path for the trusted {name} executable.")
