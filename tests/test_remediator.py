@@ -30,6 +30,13 @@ class RemediatorTests(unittest.TestCase):
             ("registry:5000/app:1.2", IMAGE_REFERENCE_VERSIONED_TAG),
             (f"registry:5000/app@sha256:{digest}", IMAGE_REFERENCE_DIGEST_PINNED),
             (f"nginx:latest@sha256:{digest}", IMAGE_REFERENCE_DIGEST_PINNED),
+            (f"bad name@sha256:{digest}", IMAGE_REFERENCE_MUTABLE),
+            (f" nginx@sha256:{digest}", IMAGE_REFERENCE_MUTABLE),
+            (f"nginx@sha256:{digest} ", IMAGE_REFERENCE_MUTABLE),
+            (f"registry:5000//app@sha256:{digest}", IMAGE_REFERENCE_MUTABLE),
+            (f"nginx@sha256:{'a' * 63}", IMAGE_REFERENCE_MUTABLE),
+            (f"nginx@sha256:{'a' * 65}", IMAGE_REFERENCE_MUTABLE),
+            (f"nginx@sha256:{'g' * 64}", IMAGE_REFERENCE_MUTABLE),
             ("registry:5000/app@sha256:", IMAGE_REFERENCE_MUTABLE),
             ("registry:5000/app@sha256:invalid", IMAGE_REFERENCE_MUTABLE),
         ):

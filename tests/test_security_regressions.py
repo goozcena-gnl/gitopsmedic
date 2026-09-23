@@ -284,6 +284,18 @@ class SecurityTests(unittest.TestCase):
         path.write_text(json.dumps(data))
         self.assert_refused_unchanged(proposal, path, [self.target])
 
+    def test_approved_image_or_digest_mutation_is_rejected(self):
+        for image in (
+            "attacker.invalid/demo/web@sha256:" + "a" * 64,
+            "registry.invalid/demo/web@sha256:" + "b" * 64,
+        ):
+            with self.subTest(image=image):
+                proposal, path = self.proposal()
+                data = json.loads(path.read_text())
+                data["candidate"]["spec"]["template"]["spec"]["containers"][0]["image"] = image
+                path.write_text(json.dumps(data))
+                self.assert_refused_unchanged(proposal, path, [self.target])
+
     def test_target_substitution_rejected(self):
         proposal, path = self.proposal()
         other = self.root / "other.json"
@@ -671,6 +683,27 @@ class SecurityTests(unittest.TestCase):
             gates, safe = validate_candidate(candidate, self.root / "policies")
         self.assertFalse(safe)
         self.assertEqual(next(gate.status for gate in gates if gate.name == "conftest"), "NOT RUN")
+
+    def test_nonregular_nonexecutable_and_relative_scanner_paths_are_not_run(self):
+        candidate = json.loads((ROOT / "examples/secure/deployment.json").read_text())
+        scanner = self.write_scanner("approved-conftest", "#!/usr/bin/env python3\nraise SystemExit(0)\n")
+        directory = self.root / "scanner-directory"
+        directory.mkdir()
+        for configured_path, expected_sha in (
+            (str(directory), "1" * 64),
+            (scanner.name, _sha256(scanner)),
+            (str(scanner), _sha256(scanner)),
+        ):
+            with self.subTest(path=configured_path):
+                if configured_path == str(scanner):
+                    scanner.chmod(0o644)
+                with patch.dict(os.environ, {
+                    "GITOPSMEDIC_CONFTEST_PATH": configured_path,
+                    "GITOPSMEDIC_CONFTEST_SHA256": expected_sha,
+                }, clear=False):
+                    gates, safe = validate_candidate(candidate, self.root / "policies")
+                self.assertFalse(safe)
+                self.assertEqual(next(gate.status for gate in gates if gate.name == "conftest"), "NOT RUN")
 
     def test_symlinked_scanner_path_is_not_run(self):
         candidate = json.loads((ROOT / "examples/secure/deployment.json").read_text())
