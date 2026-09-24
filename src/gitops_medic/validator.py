@@ -1,18 +1,36 @@
 from __future__ import annotations
 
+import os
 import hashlib
 import json
-import shutil
+import re
 import stat
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from .analyzer import analyze
 from .models import GateResult
 
 
-REVIEWED_POLICY_SHA256 = "cf7352b1336c2b64220c2f3250541967cd42bcbf67ed9c900880c5c387745d9e"
+REVIEWED_POLICY_SHA256 = "da64028cc8c46921363637ffe3408647c7ea95c3dacf6c465af4b188eb32719a"
+_TRUSTED_SCANNER_SHA256 = re.compile(r"[0-9a-fA-F]{64}")
+
+
+@dataclass(frozen=True)
+class TrustedScanner:
+    name: str
+    path: Path
+    sha256: str
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _reviewed_policy_bytes(policy_dir: Path) -> bytes | None:
@@ -24,6 +42,38 @@ def _reviewed_policy_bytes(policy_dir: Path) -> bytes | None:
         return content if hashlib.sha256(content).hexdigest() == REVIEWED_POLICY_SHA256 else None
     except OSError:
         return None
+
+
+def _trusted_scanner_env_prefix(name: str) -> str:
+    return f"GITOPSMEDIC_{name.upper()}"
+
+
+def _trusted_scanner_not_run(name: str, detail: str) -> tuple[None, GateResult]:
+    return None, GateResult(name, "NOT RUN", detail)
+
+
+def _trusted_scanner(name: str) -> tuple[TrustedScanner | None, GateResult | None]:
+    prefix = _trusted_scanner_env_prefix(name)
+    configured_path = os.environ.get(f"{prefix}_PATH", "").strip()
+    expected_sha = os.environ.get(f"{prefix}_SHA256", "").strip()
+    normalized_expected_sha = expected_sha.lower()
+    if not configured_path:
+        return _trusted_scanner_not_run(name, f"Required: set {prefix}_PATH to the reviewed local {name} executable and set {prefix}_SHA256 to its reviewed 64-character SHA-256 hex value.")
+    if not _TRUSTED_SCANNER_SHA256.fullmatch(expected_sha):
+        return _trusted_scanner_not_run(name, f"Required: set {prefix}_SHA256 to the reviewed 64-character SHA-256 hex value of the executable selected by {prefix}_PATH.")
+    path = Path(configured_path)
+    if not path.is_absolute():
+        return _trusted_scanner_not_run(name, f"Required: set {prefix}_PATH to an absolute path for the trusted {name} executable.")
+    try:
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or not os.access(path, os.X_OK):
+            return _trusted_scanner_not_run(name, f"Trusted {name} path must be an executable regular file, not a symlink or special file.")
+        actual_sha = _file_sha256(path)
+    except OSError:
+        return _trusted_scanner_not_run(name, f"Trusted {name} provenance could not be verified. Review the local path and SHA-256 configuration before rerunning validation.")
+    if actual_sha != normalized_expected_sha:
+        return _trusted_scanner_not_run(name, f"Trusted {name} provenance mismatch. Review the executable selected by {prefix}_PATH and update {prefix}_SHA256 only after independent verification.")
+    return TrustedScanner(name, path, actual_sha), None
 
 
 def _run(argv: list[str], name: str, cwd: Path | None = None) -> GateResult:
@@ -42,17 +92,21 @@ def validate_candidate(candidate: dict, policy_dir: Path | None = None) -> tuple
         candidate_path = Path(td) / "candidate.json"
         candidate_path.write_text(json.dumps(candidate, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         reviewed_policy = _reviewed_policy_bytes(policy_dir)
-        if shutil.which("conftest") and reviewed_policy is not None:
+        conftest, conftest_gate = _trusted_scanner("conftest")
+        if conftest is not None and reviewed_policy is not None:
             staged_policy_dir = Path(td) / "reviewed-policies"
             staged_policy_dir.mkdir()
             (staged_policy_dir / "kubernetes.rego").write_bytes(reviewed_policy)
-            gates.append(_run(["conftest", "test", str(candidate_path), "-p", str(staged_policy_dir)], "conftest", cwd=Path(td)))
+            gates.append(_run([str(conftest.path), "test", str(candidate_path), "-p", str(staged_policy_dir)], "conftest", cwd=Path(td)))
+        elif reviewed_policy is None:
+            gates.append(GateResult("conftest", "NOT RUN", "Required: restore the shipped, digest-verified kubernetes.rego policy and configure a trusted Conftest executable with GITOPSMEDIC_CONFTEST_SHA256. Policy changes require review and a matching digest update."))
         else:
-            gates.append(GateResult("conftest", "NOT RUN", "Required: install Conftest and restore the shipped, digest-verified kubernetes.rego policy. Policy changes require review and a matching digest update."))
-        if shutil.which("trivy"):
+            gates.append(conftest_gate)
+        trivy, trivy_gate = _trusted_scanner("trivy")
+        if trivy is not None:
             trusted_ignore = Path(td) / "trusted.trivyignore"
             trusted_ignore.write_text("", encoding="utf-8")
-            gates.append(_run(["trivy", "config", "--ignorefile", str(trusted_ignore), "--exit-code", "1", "--severity", "HIGH,CRITICAL", str(candidate_path)], "trivy", cwd=Path(td)))
+            gates.append(_run([str(trivy.path), "config", "--ignorefile", str(trusted_ignore), "--exit-code", "1", "--severity", "HIGH,CRITICAL", str(candidate_path)], "trivy", cwd=Path(td)))
         else:
-            gates.append(GateResult("trivy", "NOT RUN", "Required: install Trivy and rerun validation."))
+            gates.append(trivy_gate)
     return gates, all(g.status == "PASS" for g in gates)

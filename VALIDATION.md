@@ -155,3 +155,22 @@ Executed on 2026-09-11 against tested code commit `a0e6d2283f45e7c59863b5a936ca3
 | Real hardened demo | PASS | `make PYTHON=python3 demo REPLACEMENT_IMAGE=nginx:1.27.5`; APPLY completed with zero residual built-in findings |
 
 Conftest now runs from the validation temporary directory with explicit candidate and staged digest-verified policy paths, preventing repository-local configuration and additional policy content from influencing the mandatory gate.
+
+## Digest-pinning and scanner-provenance hardening verification
+
+Executed on 2026-09-21 against the current `security/p1-scanner-image-trust` worktree after introducing digest-only hardened image acceptance, SHA-256-bound scanner provenance, and expanded reviewed Rego privilege checks.
+
+| Check | Result | Command / evidence |
+|---|---|---|
+| Compile | PASS | `make PYTHON=python3 compile` |
+| Full unit suite | PASS: 64 tests | `make PYTHON=python3 test` |
+| Security regression suite | PASS: 57 tests, 4 skipped real-tool checks | `PYTHONPATH=src python3 -m unittest discover -s tests -p test_security_regressions.py -v` |
+| Evaluations | PASS: 4/4 | `make PYTHON=python3 eval` |
+| Diff check | PASS | `git diff --check` |
+| Mocked hardened image regressions | PASS | Latest blocked; versioned tag blocked; registry with port parsed as versioned tag; digest-pinned replacement accepted; malformed digest blocked; proposal substitution still rejected |
+| Mocked scanner provenance regressions | PASS | Explicit trusted path wins over PATH shadowing; symlinked paths, wrong checksums, missing scanners, and unapproved zero-exit binaries stay `NOT RUN`; approved fake scanners PASS |
+| Real Conftest | NOT RUN | Binary unavailable on this runner (`command -v conftest` returned nothing) |
+| Real Trivy | NOT RUN | Binary unavailable on this runner (`command -v trivy` returned nothing) |
+| Real hardened demo | NOT RUN | Skipped because both required real scanner gates were unavailable; no `NOT RUN` gate was promoted to PASS |
+
+Mocked tests validate authorization and fail-closed trust logic without claiming real binary compatibility. Remaining assumptions: operators independently review the digest-pinned replacement image they approve, provide trusted scanner path/SHA-256 inputs from an operator-controlled environment, and run APPLY from an operator-controlled checkout without concurrent hostile writers.

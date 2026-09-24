@@ -24,7 +24,7 @@
         "containers": [
           {
             "name": "web",
-            "image": "nginx:1.27.5",
+            "image": "registry.invalid/demo/web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "ports": [
               {
                 "containerPort": 80

@@ -29,4 +29,4 @@ Conftest v0.68.x uses Rego v1 by default. The included policy therefore uses cur
 ## Version pins used in the optional demo path
 - Ollama container: `ollama/ollama:0.33.3` (stable tag verified on Docker Hub on 2026-09-10; 0.34.0 was released the same day and was intentionally not adopted immediately).
 - Grafana OTel LGTM: `grafana/otel-lgtm:0.32.1` (current stable tag checked on 2026-09-10).
-- Trivy CI container: `aquasec/trivy:0.74.0` (latest stable release checked on 2026-09-10).
+- Trivy CI container: `aquasec/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969` (tag `0.74.0`, registry digest verified on 2026-09-21).
